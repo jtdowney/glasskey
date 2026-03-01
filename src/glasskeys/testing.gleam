@@ -16,18 +16,19 @@
 //// import glasskeys/testing
 ////
 //// pub fn registration_test() {
-////   let #(_, challenge) = registration.new()
-////     |> registration.origin("https://example.com")
-////     |> registration.rp_id("example.com")
-////     |> registration.build()
+////   let #(_, challenge) = registration.generate_options(
+////     registration.Options(
+////       rp: registration.Rp(id: "example.com", name: "Test"),
+////       user: registration.User(id: <<1, 2, 3>>, name: "test", display_name: "Test"),
+////       origin: "https://example.com",
+////       ..registration.default_options()
+////     ),
+////   )
 ////
 ////   let response = testing.build_registration_response(challenge: challenge)
+////   let response_json = testing.to_registration_json(response)
 ////
-////   let assert Ok(credential) = registration.verify(
-////     attestation_object: response.attestation_object,
-////     client_data_json: response.client_data_json,
-////     challenge: challenge,
-////   )
+////   let assert Ok(credential) = registration.verify(response_json, challenge)
 //// }
 //// ```
 
@@ -189,8 +190,8 @@ pub fn build_registration_response(
 
   let auth_data =
     build_registration_authenticator_data(
-      rp_id: challenge.rp_id,
-      credential_id: credential_id,
+      rp_id: registration.challenge_rp_id(challenge),
+      credential_id:,
       cose_key: cose,
       flags: flags,
       sign_count: 0,
@@ -199,16 +200,16 @@ pub fn build_registration_response(
   let attestation_object = build_attestation_object(auth_data)
   let client_data_json =
     build_client_data_create(
-      challenge: challenge.bytes,
-      origin: challenge.origin,
+      challenge: registration.challenge_bytes(challenge),
+      origin: registration.challenge_origin(challenge),
       cross_origin: False,
     )
 
   RegistrationResponse(
-    attestation_object: attestation_object,
-    client_data_json: client_data_json,
-    credential_id: credential_id,
-    keypair: keypair,
+    attestation_object:,
+    client_data_json:,
+    credential_id:,
+    keypair:,
   )
 }
 
@@ -225,15 +226,15 @@ pub fn build_authentication_response(
 
   let auth_data =
     build_authentication_authenticator_data(
-      rp_id: challenge.rp_id,
+      rp_id: authentication.challenge_rp_id(challenge),
       flags: flags,
       sign_count: sign_count,
     )
 
   let client_data_json =
     build_client_data_get(
-      challenge: challenge.bytes,
-      origin: challenge.origin,
+      challenge: authentication.challenge_bytes(challenge),
+      origin: authentication.challenge_origin(challenge),
       cross_origin: False,
     )
 
@@ -245,9 +246,83 @@ pub fn build_authentication_response(
 
   AuthenticationResponse(
     authenticator_data: auth_data,
-    client_data_json: client_data_json,
-    signature: signature,
+    client_data_json:,
+    signature:,
   )
+}
+
+/// Convert a registration response to SimpleWebAuthn-compatible JSON string.
+pub fn to_registration_json(response: RegistrationResponse) -> String {
+  json.object([
+    #(
+      "id",
+      json.string(bit_array.base64_url_encode(response.credential_id, False)),
+    ),
+    #(
+      "rawId",
+      json.string(bit_array.base64_url_encode(response.credential_id, False)),
+    ),
+    #("type", json.string("public-key")),
+    #(
+      "response",
+      json.object([
+        #(
+          "clientDataJSON",
+          json.string(bit_array.base64_url_encode(
+            response.client_data_json,
+            False,
+          )),
+        ),
+        #(
+          "attestationObject",
+          json.string(bit_array.base64_url_encode(
+            response.attestation_object,
+            False,
+          )),
+        ),
+      ]),
+    ),
+    #("clientExtensionResults", json.object([])),
+  ])
+  |> json.to_string
+}
+
+/// Convert an authentication response to SimpleWebAuthn-compatible JSON string.
+pub fn to_authentication_json(
+  response: AuthenticationResponse,
+  credential_id: BitArray,
+) -> String {
+  json.object([
+    #("id", json.string(bit_array.base64_url_encode(credential_id, False))),
+    #("rawId", json.string(bit_array.base64_url_encode(credential_id, False))),
+    #("type", json.string("public-key")),
+    #(
+      "response",
+      json.object([
+        #(
+          "clientDataJSON",
+          json.string(bit_array.base64_url_encode(
+            response.client_data_json,
+            False,
+          )),
+        ),
+        #(
+          "authenticatorData",
+          json.string(bit_array.base64_url_encode(
+            response.authenticator_data,
+            False,
+          )),
+        ),
+        #(
+          "signature",
+          json.string(bit_array.base64_url_encode(response.signature, False)),
+        ),
+        #("userHandle", json.null()),
+      ]),
+    ),
+    #("clientExtensionResults", json.object([])),
+  ])
+  |> json.to_string
 }
 
 // ============================================================================
@@ -268,8 +343,8 @@ pub fn build_client_data_create(
   build_client_data(
     typ: "webauthn.create",
     challenge: challenge,
-    origin: origin,
-    cross_origin: cross_origin,
+    origin:,
+    cross_origin:,
   )
 }
 
@@ -282,8 +357,8 @@ pub fn build_client_data_get(
   build_client_data(
     typ: "webauthn.get",
     challenge: challenge,
-    origin: origin,
-    cross_origin: cross_origin,
+    origin:,
+    cross_origin:,
   )
 }
 

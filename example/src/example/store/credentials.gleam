@@ -252,10 +252,5 @@ fn user_decoder() -> decode.Decoder(StoredUser) {
 fn stored_to_credential(stored: StoredCredential) -> Result(Credential, Nil) {
   use id <- result.try(bit_array.base64_url_decode(stored.id))
   use public_key <- result.try(bit_array.base64_url_decode(stored.public_key))
-  Ok(Credential(
-    id: id,
-    public_key: public_key,
-    sign_count: stored.sign_count,
-    user_verified: False,
-  ))
+  Ok(Credential(id: id, public_key: public_key, sign_count: stored.sign_count))
 }

@@ -18,19 +18,11 @@ if (checkWebAuthn()) {
         throw new Error(err.error || 'Login failed');
       }
 
-      const options = await beginRes.json();
-
-      const publicKeyOptions = {
-        challenge: base64UrlDecode(options.publicKey.challenge),
-        rpId: options.publicKey.rpId,
-        timeout: options.publicKey.timeout,
-        userVerification: options.publicKey.userVerification,
-      };
+      const { session_id, options } = await beginRes.json();
+      const optionsJSON = JSON.parse(options);
 
       statusEl.textContent = 'Select your passkey...';
-      const credential = await navigator.credentials.get({
-        publicKey: publicKeyOptions,
-      });
+      const response = await SimpleWebAuthnBrowser.startAuthentication({ optionsJSON });
 
       statusEl.textContent = 'Verifying...';
 
@@ -38,20 +30,8 @@ if (checkWebAuthn()) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          session_id: options.session_id,
-          credential: {
-            id: base64UrlEncode(credential.rawId),
-            rawId: base64UrlEncode(credential.rawId),
-            type: credential.type,
-            response: {
-              authenticatorData: base64UrlEncode(credential.response.authenticatorData),
-              clientDataJSON: base64UrlEncode(credential.response.clientDataJSON),
-              signature: base64UrlEncode(credential.response.signature),
-              userHandle: credential.response.userHandle
-                ? base64UrlEncode(credential.response.userHandle)
-                : null,
-            },
-          },
+          session_id,
+          response: JSON.stringify(response),
         }),
       });
 

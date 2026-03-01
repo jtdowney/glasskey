@@ -68,12 +68,7 @@ pub fn parse_client_data(data: BitArray) -> Result(ClientData, GlasskeysError) {
     |> result.replace_error(ParseError("Invalid challenge encoding")),
   )
 
-  Ok(ClientData(
-    typ: typ,
-    challenge: challenge,
-    origin: origin,
-    cross_origin: cross_origin,
-  ))
+  Ok(ClientData(typ:, challenge:, origin:, cross_origin:))
 }
 
 pub type AttestedCredential {

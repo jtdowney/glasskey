@@ -91,6 +91,14 @@ pub fn register() -> String {
       ]),
     ],
     [
+      html.Script(
+        [
+          attr.src(
+            "https://unpkg.com/@simplewebauthn/browser@13.1.0/dist/bundle/index.umd.min.js",
+          ),
+        ],
+        "",
+      ),
       html.Script([attr.src("/static/utils.js")], ""),
       html.Script([attr.src("/static/register.js")], ""),
     ],
@@ -114,6 +122,14 @@ pub fn login() -> String {
       ]),
     ],
     [
+      html.Script(
+        [
+          attr.src(
+            "https://unpkg.com/@simplewebauthn/browser@13.1.0/dist/bundle/index.umd.min.js",
+          ),
+        ],
+        "",
+      ),
       html.Script([attr.src("/static/utils.js")], ""),
       html.Script([attr.src("/static/login.js")], ""),
     ],

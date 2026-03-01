@@ -22,21 +22,11 @@ if (checkWebAuthn()) {
         throw new Error(err.error || 'Registration failed');
       }
 
-      const options = await beginRes.json();
-
-      const publicKeyOptions = {
-        ...options.publicKey,
-        challenge: base64UrlDecode(options.publicKey.challenge),
-        user: {
-          ...options.publicKey.user,
-          id: base64UrlDecode(options.publicKey.user.id),
-        },
-      };
+      const { session_id, options } = await beginRes.json();
+      const optionsJSON = JSON.parse(options);
 
       statusEl.textContent = 'Waiting for authenticator...';
-      const credential = await navigator.credentials.create({
-        publicKey: publicKeyOptions,
-      });
+      const response = await SimpleWebAuthnBrowser.startRegistration({ optionsJSON });
 
       statusEl.textContent = 'Verifying...';
 
@@ -44,16 +34,8 @@ if (checkWebAuthn()) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          session_id: options.session_id,
-          credential: {
-            id: credential.id,
-            rawId: base64UrlEncode(credential.rawId),
-            type: credential.type,
-            response: {
-              attestationObject: base64UrlEncode(credential.response.attestationObject),
-              clientDataJSON: base64UrlEncode(credential.response.clientDataJSON),
-            },
-          },
+          session_id,
+          response: JSON.stringify(response),
         }),
       });
 

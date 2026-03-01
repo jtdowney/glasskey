@@ -1,11 +1,3 @@
-function base64UrlEncode(buffer) {
-  return new Uint8Array(buffer).toBase64({ alphabet: 'base64url', omitPadding: true });
-}
-
-function base64UrlDecode(str) {
-  return Uint8Array.fromBase64(str, { alphabet: 'base64url' }).buffer;
-}
-
 function checkWebAuthn() {
   if (!window.PublicKeyCredential) {
     const main = document.querySelector('main');
