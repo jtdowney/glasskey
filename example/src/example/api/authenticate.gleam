@@ -3,7 +3,6 @@ import example/store/credentials
 import example/store/sessions.{AuthenticationSession}
 import example/web.{type Context}
 import glasskeys/authentication
-import gleam/bit_array
 import gleam/bool
 import gleam/dynamic/decode
 import gleam/json
@@ -13,27 +12,25 @@ import gleam/result
 import wisp.{type Request, type Response}
 
 pub fn begin(_req: Request, ctx: Context) -> Response {
-  let #(challenge_b64, verifier) =
-    authentication.new()
-    |> authentication.origin(ctx.origin)
-    |> authentication.rp_id(ctx.rp_id)
-    |> authentication.build()
+  let defaults = authentication.default_options()
+  let options =
+    authentication.Options(
+      ..defaults,
+      rp_id: ctx.rp_id,
+      origin: ctx.origin,
+      allow_credentials: [],
+    )
+
+  let #(options_json, challenge) = authentication.generate_options(options)
 
   let session_id = helpers.generate_session_id()
-  sessions.set(ctx.session_store, session_id, AuthenticationSession(verifier))
+  sessions.set(ctx.session_store, session_id, AuthenticationSession(challenge))
 
+  // Wrap the options JSON with session_id for the frontend
   let response_json =
     json.object([
       #("session_id", json.string(session_id)),
-      #(
-        "publicKey",
-        json.object([
-          #("challenge", json.string(challenge_b64)),
-          #("rpId", json.string(ctx.rp_id)),
-          #("timeout", json.int(60_000)),
-          #("userVerification", json.string("preferred")),
-        ]),
-      ),
+      #("options", json.string(options_json)),
     ])
 
   wisp.json_response(json.to_string(response_json), 200)
@@ -44,31 +41,8 @@ pub fn complete(req: Request, ctx: Context) -> Response {
 
   let decoder = {
     use session_id <- decode.field("session_id", decode.string)
-    use credential_id <- decode.subfield(["credential", "id"], decode.string)
-    use authenticator_data <- decode.subfield(
-      ["credential", "response", "authenticatorData"],
-      decode.string,
-    )
-    use client_data_json <- decode.subfield(
-      ["credential", "response", "clientDataJSON"],
-      decode.string,
-    )
-    use signature <- decode.subfield(
-      ["credential", "response", "signature"],
-      decode.string,
-    )
-    use user_handle <- decode.subfield(
-      ["credential", "response", "userHandle"],
-      decode.optional(decode.string),
-    )
-    decode.success(#(
-      session_id,
-      credential_id,
-      authenticator_data,
-      client_data_json,
-      signature,
-      user_handle,
-    ))
+    use response <- decode.field("response", decode.string)
+    decode.success(#(session_id, response))
   }
 
   let decode_result = decode.run(json_body, decoder)
@@ -76,14 +50,7 @@ pub fn complete(req: Request, ctx: Context) -> Response {
     when: result.is_error(decode_result),
     return: helpers.json_error("Invalid request", 400),
   )
-  let assert Ok(#(
-    session_id,
-    cred_id_b64,
-    auth_data_b64,
-    client_data_b64,
-    sig_b64,
-    user_handle_b64,
-  )) = decode_result
+  let assert Ok(#(session_id, response_json)) = decode_result
 
   let session_result = sessions.get(ctx.session_store, session_id)
   use <- bool.guard(
@@ -93,42 +60,22 @@ pub fn complete(req: Request, ctx: Context) -> Response {
   let assert Ok(session) = session_result
   sessions.delete(ctx.session_store, session_id)
 
-  let verifier_result = require_auth_session(session)
+  let challenge_result = require_auth_session(session)
   use <- bool.guard(
-    when: result.is_error(verifier_result),
+    when: result.is_error(challenge_result),
     return: helpers.json_error("Invalid session type", 400),
   )
-  let assert Ok(verifier) = verifier_result
+  let assert Ok(challenge) = challenge_result
 
-  let cred_id_result = bit_array.base64_url_decode(cred_id_b64)
-  use <- bool.guard(
-    when: result.is_error(cred_id_result),
-    return: helpers.json_error("Invalid credential_id encoding", 400),
-  )
-  let assert Ok(credential_id) = cred_id_result
+  // Parse response to get credential_id and user_handle for lookup
+  let info_result = authentication.parse_response(response_json)
+  use <- bool.lazy_guard(when: result.is_error(info_result), return: fn() {
+    let assert Error(e) = info_result
+    helpers.json_error(helpers.error_to_string(e), 400)
+  })
+  let assert Ok(info) = info_result
 
-  let auth_data_result = bit_array.base64_url_decode(auth_data_b64)
-  use <- bool.guard(
-    when: result.is_error(auth_data_result),
-    return: helpers.json_error("Invalid authenticatorData encoding", 400),
-  )
-  let assert Ok(authenticator_data) = auth_data_result
-
-  let client_data_result = bit_array.base64_url_decode(client_data_b64)
-  use <- bool.guard(
-    when: result.is_error(client_data_result),
-    return: helpers.json_error("Invalid clientDataJSON encoding", 400),
-  )
-  let assert Ok(client_data_json) = client_data_result
-
-  let sig_result = bit_array.base64_url_decode(sig_b64)
-  use <- bool.guard(
-    when: result.is_error(sig_result),
-    return: helpers.json_error("Invalid signature encoding", 400),
-  )
-  let assert Ok(signature) = sig_result
-
-  let user_result = find_user(ctx, credential_id, user_handle_b64)
+  let user_result = find_user(ctx, info.credential_id, info.user_handle)
   use <- bool.guard(
     when: result.is_error(user_result),
     return: helpers.json_error("User not found", 400),
@@ -136,7 +83,7 @@ pub fn complete(req: Request, ctx: Context) -> Response {
   let assert Ok(user) = user_result
 
   let stored_cred_result =
-    list.find(user.credentials, fn(c) { c.id == credential_id })
+    list.find(user.credentials, fn(c) { c.id == info.credential_id })
   use <- bool.guard(
     when: result.is_error(stored_cred_result),
     return: helpers.json_error("Credential not found", 400),
@@ -145,11 +92,8 @@ pub fn complete(req: Request, ctx: Context) -> Response {
 
   let verify_result =
     authentication.verify(
-      authenticator_data: authenticator_data,
-      client_data_json: client_data_json,
-      signature: signature,
-      credential_id: credential_id,
-      challenge: verifier,
+      response_json: response_json,
+      challenge: challenge,
       stored: stored_cred,
     )
   use <- bool.lazy_guard(when: result.is_error(verify_result), return: fn() {
@@ -172,11 +116,10 @@ pub fn complete(req: Request, ctx: Context) -> Response {
 fn find_user(
   ctx: Context,
   credential_id: BitArray,
-  user_handle_b64: option.Option(String),
+  user_handle: option.Option(BitArray),
 ) -> Result(credentials.User, Nil) {
-  case user_handle_b64 {
-    Some(handle_b64) -> {
-      use user_id <- result.try(bit_array.base64_url_decode(handle_b64))
+  case user_handle {
+    Some(user_id) -> {
       use user <- result.try(credentials.get_user_by_user_id(
         ctx.credential_store,
         user_id,
@@ -195,7 +138,7 @@ fn require_auth_session(
   session: sessions.SessionData,
 ) -> Result(authentication.Challenge, Nil) {
   case session {
-    sessions.AuthenticationSession(verifier) -> Ok(verifier)
+    sessions.AuthenticationSession(challenge) -> Ok(challenge)
     _ -> Error(Nil)
   }
 }

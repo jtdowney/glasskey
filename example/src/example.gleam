@@ -4,14 +4,13 @@ import example/store/sessions
 import example/web.{Context}
 import gleam/erlang/process
 import mist
-import simplifile
 import wisp
 import wisp/wisp_mist
 
 pub fn main() {
   wisp.configure_logger()
 
-  let assert Ok(priv) = simplifile.current_directory()
+  let assert Ok(priv) = wisp.priv_directory("example")
   let priv = priv <> "/priv/static"
   let storage_path = priv <> "/../storage"
 

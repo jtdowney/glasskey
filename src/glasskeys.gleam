@@ -4,33 +4,24 @@
 //// using passkeys and security keys. It handles the cryptographic verification
 //// of both registration and authentication ceremonies.
 ////
+//// Designed for use with [SimpleWebAuthn browser](https://simplewebauthn.dev/docs/packages/browser).
+////
 //// ## Quick Start
 ////
 //// ### Registration (creating a new credential)
 ////
 //// ```gleam
-//// import glasskeys
 //// import glasskeys/registration
 ////
-//// // 1. Build a challenge
-//// let #(challenge_b64, verifier) =
-////   registration.new()
-////   |> registration.origin("https://example.com")
-////   |> registration.rp_id("example.com")
-////   |> registration.build()
+//// // 1. Generate options for browser
+//// let #(options_json, challenge) = registration.generate_options(options)
 ////
-//// // 2. Send challenge_b64 to browser as part of PublicKeyCredentialCreationOptions
-//// //    Store verifier in session for step 3
+//// // 2. Send options_json to browser
+//// // Browser: const resp = await startRegistration({ optionsJSON: JSON.parse(options_json) })
 ////
 //// // 3. Verify the browser's response
-//// case registration.verify(
-////   attestation_object: attestation_object,
-////   client_data_json: client_data_json,
-////   challenge: verifier,
-//// ) {
-////   Ok(credential) -> {
-////     // Store credential.id, credential.public_key, credential.sign_count
-////   }
+//// case registration.verify(response_json, challenge) {
+////   Ok(credential) -> // Store credential
 ////   Error(e) -> // Handle error
 //// }
 //// ```
@@ -38,32 +29,17 @@
 //// ### Authentication (verifying an existing credential)
 ////
 //// ```gleam
-//// import glasskeys
 //// import glasskeys/authentication
 ////
-//// // 1. Build a challenge
-//// let #(challenge_b64, verifier) =
-////   authentication.new()
-////   |> authentication.origin("https://example.com")
-////   |> authentication.rp_id("example.com")
-////   |> authentication.allowed_credentials([stored_credential_id])
-////   |> authentication.build()
+//// // 1. Generate options for browser
+//// let #(options_json, challenge) = authentication.generate_options(options)
 ////
-//// // 2. Send challenge_b64 to browser as part of PublicKeyCredentialRequestOptions
-//// //    Store verifier in session for step 3
+//// // 2. Send options_json to browser
+//// // Browser: const resp = await startAuthentication({ optionsJSON: JSON.parse(options_json) })
 ////
 //// // 3. Verify the browser's response
-//// case authentication.verify(
-////   authenticator_data: authenticator_data,
-////   client_data_json: client_data_json,
-////   signature: signature,
-////   credential_id: credential_id,
-////   challenge: verifier,
-////   stored: stored_credential,
-//// ) {
-////   Ok(updated_credential) -> {
-////     // Update stored sign_count with updated_credential.sign_count
-////   }
+//// case authentication.verify(response_json, challenge, stored_credential) {
+////   Ok(updated_credential) -> // Update stored sign_count
 ////   Error(e) -> // Handle error
 //// }
 //// ```
@@ -75,18 +51,6 @@
 //// - User verification and user presence policies
 //// - Sign count verification for cloned authenticator detection
 ////
-
-/// Phantom type indicating a builder field has been set.
-@internal
-pub type Has {
-  Has
-}
-
-/// Phantom type indicating a builder field is missing.
-@internal
-pub type Missing {
-  Missing
-}
 
 /// User verification requirement for the authenticator.
 ///
@@ -122,17 +86,8 @@ pub type PublicKey =
 ///
 /// Store the `id`, `public_key`, and `sign_count` after registration. Update `sign_count`
 /// after each successful authentication to detect cloned authenticators.
-///
-/// The `user_verified` field indicates whether the authenticator performed user verification
-/// (e.g., biometric or PIN) during this ceremony. This is useful when `UserVerification` is
-/// set to `Preferred` and you want to know if verification actually occurred.
 pub type Credential {
-  Credential(
-    id: CredentialId,
-    public_key: PublicKey,
-    sign_count: Int,
-    user_verified: Bool,
-  )
+  Credential(id: CredentialId, public_key: PublicKey, sign_count: Int)
 }
 
 /// Errors that can occur during WebAuthn verification.
