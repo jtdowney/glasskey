@@ -1,71 +1,76 @@
 import glasslock
 import glasslock/authentication
+import glasslock/registration
 import glasslock/testing
 import gleam/bit_array
 import gleam/dynamic/decode
 import gleam/json
 import gleam/list
 import gleam/option
+import gleam/string
 import kryptos/crypto
 import kryptos/hash
 
-pub fn generate_options_emits_core_fields_test() {
-  let options =
-    authentication.Options(
-      ..authentication.default_options(),
-      rp_id: "example.com",
+pub fn request_emits_core_fields_test() {
+  let #(options_json, challenge) =
+    authentication.request(
+      relying_party_id: "example.com",
       origins: ["https://example.com"],
+      options: authentication.default_options(),
     )
 
-  let #(options_json, challenge) = authentication.generate_options(options)
-
   let decoder = {
-    use rp_id <- decode.field("rpId", decode.string)
+    use relying_party_id <- decode.field("rpId", decode.string)
     use timeout <- decode.field("timeout", decode.int)
     use uv <- decode.field("userVerification", decode.string)
-    decode.success(#(rp_id, timeout, uv))
+    decode.success(#(relying_party_id, timeout, uv))
   }
 
-  let assert Ok(#(rp_id, timeout, uv)) =
+  let assert Ok(#(relying_party_id, timeout, uv)) =
     json.parse(json.to_string(options_json), decoder)
-  assert rp_id == "example.com"
+  assert relying_party_id == "example.com"
   assert timeout == 60_000
   assert uv == "preferred"
 
-  assert authentication.challenge_origins(challenge) == ["https://example.com"]
-  assert authentication.challenge_rp_id(challenge) == "example.com"
-  assert bit_array.byte_size(authentication.challenge_bytes(challenge)) == 32
+  assert testing.authentication_challenge_origins(challenge)
+    == ["https://example.com"]
+  assert testing.authentication_challenge_rp_id(challenge) == "example.com"
+  assert bit_array.byte_size(testing.authentication_challenge_bytes(challenge))
+    == 32
 }
 
-pub fn generate_options_produces_unique_challenges_test() {
-  let options =
-    authentication.Options(
-      ..authentication.default_options(),
-      rp_id: "example.com",
+pub fn request_produces_unique_challenges_test() {
+  let #(_, challenge1) =
+    authentication.request(
+      relying_party_id: "example.com",
       origins: ["https://example.com"],
+      options: authentication.default_options(),
     )
-
-  let #(_, challenge1) = authentication.generate_options(options)
-  let #(_, challenge2) = authentication.generate_options(options)
-  assert authentication.challenge_bytes(challenge1)
-    != authentication.challenge_bytes(challenge2)
+  let #(_, challenge2) =
+    authentication.request(
+      relying_party_id: "example.com",
+      origins: ["https://example.com"],
+      options: authentication.default_options(),
+    )
+  assert testing.authentication_challenge_bytes(challenge1)
+    != testing.authentication_challenge_bytes(challenge2)
 }
 
-pub fn generate_options_with_allow_credentials_test() {
+pub fn request_with_allow_credentials_test() {
   let cred1 = <<1, 2, 3, 4>>
   let cred2 = <<5, 6, 7, 8>>
-  let options =
-    authentication.Options(
-      ..authentication.default_options(),
-      rp_id: "example.com",
+  let #(options_json, _) =
+    authentication.request(
+      relying_party_id: "example.com",
       origins: ["https://example.com"],
-      allow_credentials: [
-        glasslock.CredentialId(cred1),
-        glasslock.CredentialId(cred2),
-      ],
+      options: authentication.Options(
+        ..authentication.default_options(),
+        allow_credentials: [
+          glasslock.CredentialId(cred1),
+          glasslock.CredentialId(cred2),
+        ],
+      ),
     )
-
-  let #(options_json, _) = authentication.generate_options(options)
 
   let id_decoder = {
     use id <- decode.field("id", decode.string)
@@ -83,7 +88,7 @@ pub fn generate_options_with_allow_credentials_test() {
     ]
 }
 
-pub fn generate_options_user_verification_variants_test() {
+pub fn request_user_verification_variants_test() {
   let variants = [
     #(glasslock.VerificationDiscouraged, "discouraged"),
     #(glasslock.VerificationPreferred, "preferred"),
@@ -97,15 +102,15 @@ pub fn generate_options_user_verification_variants_test() {
 
   list.each(variants, fn(pair) {
     let #(variant, expected_string) = pair
-    let options =
-      authentication.Options(
-        ..authentication.default_options(),
-        rp_id: "example.com",
+    let #(options_json, _) =
+      authentication.request(
+        relying_party_id: "example.com",
         origins: ["https://example.com"],
-        user_verification: variant,
+        options: authentication.Options(
+          ..authentication.default_options(),
+          user_verification: variant,
+        ),
       )
-
-    let #(options_json, _) = authentication.generate_options(options)
     let assert Ok(uv) = json.parse(json.to_string(options_json), decoder)
     assert uv == expected_string
   })
@@ -173,7 +178,7 @@ pub fn verify_rejects_wrong_type_test() {
   let wrong_type_client_data =
     testing.build_client_data(
       type_: "webauthn.create",
-      challenge: authentication.challenge_bytes(challenge),
+      challenge: testing.authentication_challenge_bytes(challenge),
       origin: "https://example.com",
       cross_origin: False,
       top_origin: option.None,
@@ -221,7 +226,7 @@ pub fn verify_rejects_origin_mismatch_test() {
 
   let wrong_origin_client_data =
     testing.build_client_data_get(
-      challenge: authentication.challenge_bytes(challenge),
+      challenge: testing.authentication_challenge_bytes(challenge),
       origin: "https://evil.com",
       cross_origin: False,
     )
@@ -420,13 +425,13 @@ pub fn verify_rejects_rp_id_mismatch_test() {
 
   let auth_data =
     testing.build_authentication_authenticator_data(
-      rp_id: "evil.com",
+      relying_party_id: "evil.com",
       flags: testing.default_flags(),
       sign_count: 1,
     )
   let client_data_json =
     testing.build_client_data_get(
-      challenge: authentication.challenge_bytes(challenge),
+      challenge: testing.authentication_challenge_bytes(challenge),
       origin: "https://example.com",
       cross_origin: False,
     )
@@ -448,7 +453,8 @@ pub fn verify_rejects_rp_id_mismatch_test() {
 
   let result =
     authentication.verify(response_json:, challenge:, stored: stored_credential)
-  assert result == Error(glasslock.VerificationMismatch(glasslock.RpIdField))
+  assert result
+    == Error(glasslock.VerificationMismatch(glasslock.RelyingPartyIdField))
 }
 
 pub fn verify_rejects_at_flag_in_authentication_test() {
@@ -463,7 +469,7 @@ pub fn verify_rejects_at_flag_in_authentication_test() {
 
   let client_data_json =
     testing.build_client_data_get(
-      challenge: authentication.challenge_bytes(challenge),
+      challenge: testing.authentication_challenge_bytes(challenge),
       origin: "https://example.com",
       cross_origin: False,
     )
@@ -494,7 +500,7 @@ pub fn verify_rejects_cross_origin_when_disabled_test() {
 
   let cross_origin_client_data =
     testing.build_client_data_get(
-      challenge: authentication.challenge_bytes(challenge),
+      challenge: testing.authentication_challenge_bytes(challenge),
       origin: "https://example.com",
       cross_origin: True,
     )
@@ -521,7 +527,7 @@ pub fn verify_succeeds_with_cross_origin_allowed_test() {
 
   let cross_origin_client_data =
     testing.build_client_data_get(
-      challenge: authentication.challenge_bytes(challenge),
+      challenge: testing.authentication_challenge_bytes(challenge),
       origin: "https://example.com",
       cross_origin: True,
     )
@@ -699,6 +705,111 @@ type AuthSetup {
   )
 }
 
+pub fn encode_decode_roundtrip_preserves_challenge_test() {
+  let cred_a = glasslock.CredentialId(<<1, 2, 3, 4>>)
+  let cred_b = glasslock.CredentialId(<<5, 6, 7, 8>>)
+  let #(_, challenge) =
+    authentication.request(
+      relying_party_id: "example.com",
+      origins: ["https://example.com", "https://alt.example.com"],
+      options: authentication.Options(
+        ..authentication.default_options(),
+        allow_cross_origin: True,
+        allow_credentials: [cred_a, cred_b],
+        allowed_top_origins: ["https://top.example.com"],
+      ),
+    )
+
+  let encoded = authentication.encode_challenge(challenge)
+  let assert Ok(decoded) = authentication.parse_challenge(encoded:)
+
+  assert testing.authentication_challenge_bytes(decoded)
+    == testing.authentication_challenge_bytes(challenge)
+  assert testing.authentication_challenge_rp_id(decoded)
+    == testing.authentication_challenge_rp_id(challenge)
+  assert list.sort(
+      testing.authentication_challenge_origins(decoded),
+      string.compare,
+    )
+    == list.sort(
+      testing.authentication_challenge_origins(challenge),
+      string.compare,
+    )
+
+  let keypair = testing.generate_es256_keypair()
+  let stored_credential =
+    glasslock.Credential(
+      id: cred_a,
+      public_key: testing.public_key(keypair),
+      sign_count: 0,
+    )
+  // Swap in a stored credential whose id matches cred_a so we can drive verify
+  // end-to-end with the decoded challenge and prove allow_credentials survived.
+  let response =
+    testing.build_authentication_response(
+      challenge: decoded,
+      keypair:,
+      sign_count: 1,
+    )
+  let response_json =
+    testing.to_authentication_json(
+      response,
+      credential_id: stored_credential.id,
+      user_handle: option.None,
+    )
+  let assert Ok(_) =
+    authentication.verify(
+      response_json:,
+      challenge: decoded,
+      stored: stored_credential,
+    )
+}
+
+pub fn decode_rejects_registration_blob_test() {
+  let #(_, reg_challenge) =
+    registration.request(
+      relying_party: registration.RelyingParty(
+        id: "example.com",
+        name: "Test App",
+      ),
+      user: registration.User(
+        id: <<1, 2, 3, 4>>,
+        name: "testuser",
+        display_name: "Test User",
+      ),
+      origins: ["https://example.com"],
+      options: registration.default_options(),
+    )
+  let encoded = registration.encode_challenge(reg_challenge)
+
+  let result = authentication.parse_challenge(encoded:)
+  assert result
+    == Error(glasslock.ParseError(
+      "Expected authentication challenge, got registration",
+    ))
+}
+
+pub fn decode_rejects_unknown_version_test() {
+  let blob =
+    json.object([
+      #("v", json.int(99)),
+      #("kind", json.string("authentication")),
+      #("bytes", json.string(bit_array.base64_url_encode(<<0:256>>, False))),
+      #("rp_id", json.string("example.com")),
+      #("origins", json.array(["https://example.com"], json.string)),
+      #("user_verification", json.string("preferred")),
+      #("user_presence", json.string("required")),
+      #("allow_cross_origin", json.bool(False)),
+      #("allowed_top_origins", json.array([], json.string)),
+      #("allow_credentials", json.array([], json.string)),
+    ])
+    |> json.to_string
+
+  let result = authentication.parse_challenge(encoded: blob)
+  assert result
+    == Error(glasslock.ParseError("Unsupported challenge version: 99"))
+}
+
 fn default_auth_setup() -> AuthSetup {
   AuthSetup(
     stored_sign_count: 0,
@@ -732,16 +843,17 @@ fn setup_authentication_with(
     option.None -> [glasslock.CredentialId(credential_id)]
     option.Some(ids) -> ids
   }
-  let options =
-    authentication.Options(
-      ..authentication.default_options(),
-      rp_id: "example.com",
+  let #(_, challenge) =
+    authentication.request(
+      relying_party_id: "example.com",
       origins: ["https://example.com"],
-      allow_credentials:,
-      user_verification: config.user_verification,
-      allow_cross_origin: config.allow_cross_origin,
+      options: authentication.Options(
+        ..authentication.default_options(),
+        allow_credentials:,
+        user_verification: config.user_verification,
+        allow_cross_origin: config.allow_cross_origin,
+      ),
     )
-  let #(_, challenge) = authentication.generate_options(options)
   #(challenge, stored_credential, keypair)
 }
 
@@ -754,7 +866,7 @@ fn signed_response(
 ) -> String {
   let auth_data =
     testing.build_authentication_authenticator_data(
-      rp_id: authentication.challenge_rp_id(challenge),
+      relying_party_id: testing.authentication_challenge_rp_id(challenge),
       flags: testing.default_flags(),
       sign_count:,
     )
@@ -783,13 +895,13 @@ fn signed_response_with_flags(
 ) -> String {
   let auth_data =
     testing.build_authentication_authenticator_data(
-      rp_id: authentication.challenge_rp_id(challenge),
+      relying_party_id: testing.authentication_challenge_rp_id(challenge),
       flags:,
       sign_count:,
     )
   let client_data_json =
     testing.build_client_data_get(
-      challenge: authentication.challenge_bytes(challenge),
+      challenge: testing.authentication_challenge_bytes(challenge),
       origin: "https://example.com",
       cross_origin: False,
     )

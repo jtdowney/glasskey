@@ -1,4 +1,5 @@
 import glasslock
+import glasslock/authentication
 import glasslock/registration
 import glasslock/testing
 import gleam/bit_array
@@ -6,66 +7,67 @@ import gleam/dynamic/decode
 import gleam/json
 import gleam/list
 import gleam/option
+import gleam/string
 
-pub fn generate_options_emits_core_fields_test() {
-  let user_id = <<1, 2, 3, 4, 5, 6, 7, 8>>
-  let options =
-    registration.Options(
-      ..registration.default_options(),
-      rp: registration.Rp(id: "example.com", name: "Test App"),
-      user: registration.User(
-        id: user_id,
-        name: "testuser",
-        display_name: "Test User",
-      ),
-      origins: ["https://example.com"],
-    )
-
-  let #(options_json, challenge) = registration.generate_options(options)
+pub fn request_emits_core_fields_test() {
+  let #(options_json, challenge) = make_request(registration.default_options())
 
   let decoder = {
-    use rp_id <- decode.subfield(["rp", "id"], decode.string)
-    use rp_name <- decode.subfield(["rp", "name"], decode.string)
+    use relying_party_id <- decode.subfield(["rp", "id"], decode.string)
+    use relying_party_name <- decode.subfield(["rp", "name"], decode.string)
     use user_name <- decode.subfield(["user", "name"], decode.string)
     use attestation <- decode.field("attestation", decode.string)
     use timeout <- decode.field("timeout", decode.int)
-    decode.success(#(rp_id, rp_name, user_name, attestation, timeout))
+    decode.success(#(
+      relying_party_id,
+      relying_party_name,
+      user_name,
+      attestation,
+      timeout,
+    ))
   }
 
-  let assert Ok(#(rp_id, rp_name, user_name, attestation, timeout)) =
-    json.parse(json.to_string(options_json), decoder)
-  assert rp_id == "example.com"
-  assert rp_name == "Test App"
+  let assert Ok(#(
+    relying_party_id,
+    relying_party_name,
+    user_name,
+    attestation,
+    timeout,
+  )) = json.parse(json.to_string(options_json), decoder)
+  assert relying_party_id == "example.com"
+  assert relying_party_name == "Test App"
   assert user_name == "testuser"
   assert attestation == "none"
   assert timeout == 60_000
 
-  assert registration.challenge_origins(challenge) == ["https://example.com"]
-  assert registration.challenge_rp_id(challenge) == "example.com"
-  assert bit_array.byte_size(registration.challenge_bytes(challenge)) == 32
+  assert testing.registration_challenge_origins(challenge)
+    == ["https://example.com"]
+  assert testing.registration_challenge_rp_id(challenge) == "example.com"
+  assert bit_array.byte_size(testing.registration_challenge_bytes(challenge))
+    == 32
 }
 
-pub fn generate_options_produces_unique_challenges_test() {
+pub fn request_produces_unique_challenges_test() {
   let options = setup_options(glasslock.VerificationPreferred)
-  let #(_, challenge1) = registration.generate_options(options)
-  let #(_, challenge2) = registration.generate_options(options)
-  assert registration.challenge_bytes(challenge1)
-    != registration.challenge_bytes(challenge2)
+  let #(_, challenge1) = make_request(options)
+  let #(_, challenge2) = make_request(options)
+  assert testing.registration_challenge_bytes(challenge1)
+    != testing.registration_challenge_bytes(challenge2)
 }
 
-pub fn generate_options_with_exclude_credentials_test() {
+pub fn request_with_exclude_credentials_test() {
   let cred1 = <<1, 2, 3, 4>>
   let cred2 = <<5, 6, 7, 8>>
-  let options =
-    registration.Options(
-      ..setup_options(glasslock.VerificationPreferred),
-      exclude_credentials: [
-        glasslock.CredentialId(cred1),
-        glasslock.CredentialId(cred2),
-      ],
+  let #(options_json, _) =
+    make_request(
+      registration.Options(
+        ..setup_options(glasslock.VerificationPreferred),
+        exclude_credentials: [
+          glasslock.CredentialId(cred1),
+          glasslock.CredentialId(cred2),
+        ],
+      ),
     )
-
-  let #(options_json, _) = registration.generate_options(options)
 
   let id_decoder = {
     use id <- decode.field("id", decode.string)
@@ -83,13 +85,14 @@ pub fn generate_options_with_exclude_credentials_test() {
     ]
 }
 
-pub fn generate_options_with_platform_attachment_test() {
-  let options =
-    registration.Options(
-      ..setup_options(glasslock.VerificationPreferred),
-      authenticator_attachment: option.Some(registration.Platform),
+pub fn request_with_platform_attachment_test() {
+  let #(options_json, _) =
+    make_request(
+      registration.Options(
+        ..setup_options(glasslock.VerificationPreferred),
+        authenticator_attachment: option.Some(registration.Platform),
+      ),
     )
-  let #(options_json, _) = registration.generate_options(options)
   let decoder = {
     use att <- decode.subfield(
       ["authenticatorSelection", "authenticatorAttachment"],
@@ -101,13 +104,14 @@ pub fn generate_options_with_platform_attachment_test() {
   assert att == "platform"
 }
 
-pub fn generate_options_with_cross_platform_attachment_test() {
-  let options =
-    registration.Options(
-      ..setup_options(glasslock.VerificationPreferred),
-      authenticator_attachment: option.Some(registration.CrossPlatform),
+pub fn request_with_cross_platform_attachment_test() {
+  let #(options_json, _) =
+    make_request(
+      registration.Options(
+        ..setup_options(glasslock.VerificationPreferred),
+        authenticator_attachment: option.Some(registration.CrossPlatform),
+      ),
     )
-  let #(options_json, _) = registration.generate_options(options)
   let decoder = {
     use att <- decode.subfield(
       ["authenticatorSelection", "authenticatorAttachment"],
@@ -119,7 +123,7 @@ pub fn generate_options_with_cross_platform_attachment_test() {
   assert att == "cross-platform"
 }
 
-pub fn generate_options_resident_key_variants_test() {
+pub fn request_resident_key_variants_test() {
   let variants = [
     #(registration.ResidentKeyDiscouraged, "discouraged"),
     #(registration.ResidentKeyPreferred, "preferred"),
@@ -136,18 +140,19 @@ pub fn generate_options_resident_key_variants_test() {
 
   list.each(variants, fn(pair) {
     let #(variant, expected_string) = pair
-    let options =
-      registration.Options(
-        ..setup_options(glasslock.VerificationPreferred),
-        resident_key: variant,
+    let #(options_json, _) =
+      make_request(
+        registration.Options(
+          ..setup_options(glasslock.VerificationPreferred),
+          resident_key: variant,
+        ),
       )
-    let #(options_json, _) = registration.generate_options(options)
     let assert Ok(rk) = json.parse(json.to_string(options_json), decoder)
     assert rk == expected_string
   })
 }
 
-pub fn generate_options_attestation_variants_test() {
+pub fn request_attestation_variants_test() {
   let variants = [
     #(registration.AttestationNone, "none"),
     #(registration.AttestationIndirect, "indirect"),
@@ -162,12 +167,13 @@ pub fn generate_options_attestation_variants_test() {
 
   list.each(variants, fn(pair) {
     let #(variant, expected_string) = pair
-    let options =
-      registration.Options(
-        ..setup_options(glasslock.VerificationPreferred),
-        attestation: variant,
+    let #(options_json, _) =
+      make_request(
+        registration.Options(
+          ..setup_options(glasslock.VerificationPreferred),
+          attestation: variant,
+        ),
       )
-    let #(options_json, _) = registration.generate_options(options)
     let assert Ok(att) = json.parse(json.to_string(options_json), decoder)
     assert att == expected_string
   })
@@ -199,7 +205,7 @@ pub fn verify_rejects_wrong_type_test() {
   let wrong_type_client_data =
     testing.build_client_data(
       type_: "webauthn.get",
-      challenge: registration.challenge_bytes(challenge),
+      challenge: testing.registration_challenge_bytes(challenge),
       origin: "https://example.com",
       cross_origin: False,
       top_origin: option.None,
@@ -245,7 +251,7 @@ pub fn verify_rejects_origin_mismatch_test() {
 
   let wrong_origin_client_data =
     testing.build_client_data_create(
-      challenge: registration.challenge_bytes(challenge),
+      challenge: testing.registration_challenge_bytes(challenge),
       origin: "https://evil.com",
       cross_origin: False,
     )
@@ -309,7 +315,7 @@ pub fn verify_rejects_rp_id_mismatch_test() {
 
   let auth_data =
     testing.build_registration_authenticator_data(
-      rp_id: "evil.com",
+      relying_party_id: "evil.com",
       credential_id:,
       cose_key: testing.cose_key(keypair),
       flags: testing.default_flags(),
@@ -317,7 +323,7 @@ pub fn verify_rejects_rp_id_mismatch_test() {
     )
   let client_data_json =
     testing.build_client_data_create(
-      challenge: registration.challenge_bytes(challenge),
+      challenge: testing.registration_challenge_bytes(challenge),
       origin: "https://example.com",
       cross_origin: False,
     )
@@ -330,7 +336,8 @@ pub fn verify_rejects_rp_id_mismatch_test() {
     )
 
   let result = registration.verify(response_json:, challenge:)
-  assert result == Error(glasslock.VerificationMismatch(glasslock.RpIdField))
+  assert result
+    == Error(glasslock.VerificationMismatch(glasslock.RelyingPartyIdField))
 }
 
 pub fn verify_rejects_cross_origin_when_disabled_test() {
@@ -339,7 +346,7 @@ pub fn verify_rejects_cross_origin_when_disabled_test() {
 
   let cross_origin_client_data =
     testing.build_client_data_create(
-      challenge: registration.challenge_bytes(challenge),
+      challenge: testing.registration_challenge_bytes(challenge),
       origin: "https://example.com",
       cross_origin: True,
     )
@@ -358,7 +365,7 @@ pub fn verify_rejects_cross_origin_when_disabled_test() {
 
 pub fn verify_succeeds_with_cross_origin_allowed_test() {
   let #(_, challenge) =
-    registration.generate_options(
+    make_request(
       registration.Options(
         ..setup_options(glasslock.VerificationPreferred),
         allow_cross_origin: True,
@@ -368,7 +375,7 @@ pub fn verify_succeeds_with_cross_origin_allowed_test() {
 
   let cross_origin_client_data =
     testing.build_client_data_create(
-      challenge: registration.challenge_bytes(challenge),
+      challenge: testing.registration_challenge_bytes(challenge),
       origin: "https://example.com",
       cross_origin: True,
     )
@@ -399,17 +406,106 @@ pub fn verify_rejects_invalid_credential_type_test() {
     == Error(glasslock.VerificationMismatch(glasslock.CredentialTypeField))
 }
 
+pub fn encode_decode_roundtrip_preserves_challenge_test() {
+  let options =
+    registration.Options(
+      ..registration.default_options(),
+      allow_cross_origin: True,
+      algorithms: [registration.Es256, registration.Ed25519, registration.Rs256],
+      allowed_top_origins: ["https://top.example.com"],
+    )
+  let #(_, challenge) =
+    registration.request(
+      relying_party: registration.RelyingParty(
+        id: "example.com",
+        name: "Test App",
+      ),
+      user: registration.User(
+        id: <<1, 2, 3, 4>>,
+        name: "testuser",
+        display_name: "Test User",
+      ),
+      origins: ["https://example.com", "https://alt.example.com"],
+      options:,
+    )
+
+  let encoded = registration.encode_challenge(challenge)
+  let assert Ok(decoded) = registration.parse_challenge(encoded:)
+
+  assert testing.registration_challenge_bytes(decoded)
+    == testing.registration_challenge_bytes(challenge)
+  assert testing.registration_challenge_rp_id(decoded)
+    == testing.registration_challenge_rp_id(challenge)
+  assert list.sort(
+      testing.registration_challenge_origins(decoded),
+      string.compare,
+    )
+    == list.sort(
+      testing.registration_challenge_origins(challenge),
+      string.compare,
+    )
+
+  let response = testing.build_registration_response(challenge: decoded)
+  let response_json = testing.to_registration_json(response)
+  let assert Ok(_) = registration.verify(response_json:, challenge: decoded)
+}
+
+pub fn decode_rejects_authentication_blob_test() {
+  let #(_, auth_challenge) =
+    authentication.request(
+      relying_party_id: "example.com",
+      origins: ["https://example.com"],
+      options: authentication.default_options(),
+    )
+  let encoded = authentication.encode_challenge(auth_challenge)
+
+  let result = registration.parse_challenge(encoded:)
+  assert result
+    == Error(glasslock.ParseError(
+      "Expected registration challenge, got authentication",
+    ))
+}
+
+pub fn decode_rejects_unknown_version_test() {
+  let blob =
+    json.object([
+      #("v", json.int(99)),
+      #("kind", json.string("registration")),
+      #("bytes", json.string(bit_array.base64_url_encode(<<0:256>>, False))),
+      #("rp_id", json.string("example.com")),
+      #("origins", json.array(["https://example.com"], json.string)),
+      #("user_verification", json.string("preferred")),
+      #("user_presence", json.string("required")),
+      #("allow_cross_origin", json.bool(False)),
+      #("allowed_top_origins", json.array([], json.string)),
+      #("algorithms", json.array([-7], json.int)),
+    ])
+    |> json.to_string
+
+  let result = registration.parse_challenge(encoded: blob)
+  assert result
+    == Error(glasslock.ParseError("Unsupported challenge version: 99"))
+}
+
 fn setup_options(uv: glasslock.UserVerification) -> registration.Options {
-  registration.Options(
-    ..registration.default_options(),
-    rp: registration.Rp(id: "example.com", name: "Test App"),
+  registration.Options(..registration.default_options(), user_verification: uv)
+}
+
+fn make_request(
+  options: registration.Options,
+) -> #(json.Json, registration.Challenge) {
+  registration.request(
+    relying_party: registration.RelyingParty(
+      id: "example.com",
+      name: "Test App",
+    ),
     user: registration.User(
       id: <<1, 2, 3, 4, 5, 6, 7, 8>>,
       name: "testuser",
       display_name: "Test User",
     ),
     origins: ["https://example.com"],
-    user_verification: uv,
+    options:,
   )
 }
 
@@ -420,7 +516,7 @@ fn setup_challenge() -> registration.Challenge {
 fn setup_challenge_with_verification(
   uv: glasslock.UserVerification,
 ) -> registration.Challenge {
-  let #(_, challenge) = registration.generate_options(setup_options(uv))
+  let #(_, challenge) = make_request(setup_options(uv))
   challenge
 }
 
@@ -432,7 +528,7 @@ fn manually_built_response(
   let credential_id = glasslock.CredentialId(<<1, 2, 3, 4, 5, 6, 7, 8, 9, 10>>)
   let auth_data =
     testing.build_registration_authenticator_data(
-      rp_id: registration.challenge_rp_id(challenge),
+      relying_party_id: testing.registration_challenge_rp_id(challenge),
       credential_id:,
       cose_key: testing.cose_key(keypair),
       flags:,
@@ -440,7 +536,7 @@ fn manually_built_response(
     )
   let client_data_json =
     testing.build_client_data_create(
-      challenge: registration.challenge_bytes(challenge),
+      challenge: testing.registration_challenge_bytes(challenge),
       origin: "https://example.com",
       cross_origin: False,
     )

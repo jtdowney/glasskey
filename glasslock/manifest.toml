@@ -34,6 +34,7 @@ packages = [
 [requirements]
 gleam_json = { version = ">= 3.1.0 and < 4.0.0" }
 gleam_stdlib = { version = ">= 0.67.1 and < 2.0.0" }
+gleam_time = { version = ">= 1.8.0 and < 2.0.0" }
 gose = { version = ">= 2.1.0 and < 3.0.0" }
 kryptos = { version = ">= 1.0.0 and < 2.0.0" }
 qcheck = { version = ">= 1.0.2 and < 2.0.0" }

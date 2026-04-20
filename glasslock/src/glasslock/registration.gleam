@@ -6,17 +6,18 @@
 //// import glasslock/registration
 ////
 //// // Generate options for browser
-//// let #(options_json, challenge) =
-////   registration.generate_options(
-////     registration.Options(
-////       rp: registration.Rp(id: "example.com", name: "My App"),
-////       user: registration.User(id: user_id, name: "john", display_name: "John"),
-////       origins: ["https://example.com"],
-////       ..registration.default_options()
-////     ),
+//// let #(request_json, challenge) =
+////   registration.request(
+////     relying_party: registration.RelyingParty(id: "example.com", name: "My App"),
+////     user: registration.User(id: user_id, name: "john", display_name: "John"),
+////     origins: ["https://example.com"],
+////     options: registration.default_options(),
 ////   )
 ////
-//// // Send options_json to browser, receive response_json back
+//// // Send request_json to browser, receive response_json back. Keep
+//// // `challenge` in memory for a single-node deploy; to span processes
+//// // or nodes, serialize with `registration.encode_challenge` and hydrate
+//// // it back with `registration.parse_challenge`.
 ////
 //// // Verify the response
 //// case registration.verify(response_json:, challenge:) {
@@ -30,11 +31,13 @@ import glasslock/internal
 import gleam/bit_array
 import gleam/bool
 import gleam/dynamic/decode
+import gleam/int
 import gleam/json.{type Json}
 import gleam/list
 import gleam/option.{type Option}
 import gleam/result
 import gleam/set
+import gleam/time/duration.{type Duration}
 import gose
 import kryptos/crypto
 
@@ -50,9 +53,12 @@ pub type Algorithm {
 
 /// Attestation conveyance preference.
 ///
-/// glasslock currently only verifies `"none"` attestation. Any variant other
-/// than `AttestationNone` may still be requested, but verification will fail
-/// if the browser returns a different format (e.g. `"packed"`).
+/// glasslock only verifies the `"none"` attestation format. Requesting
+/// `AttestationIndirect`, `AttestationDirect`, or `AttestationEnterprise`
+/// causes the authenticator to return a real attestation format
+/// (e.g. `"packed"`, `"tpm"`), which verification will reject. The other
+/// variants are retained in the API so callers can opt in once support for
+/// additional formats lands.
 pub type Attestation {
   /// No attestation statement is requested.
   AttestationNone
@@ -72,21 +78,16 @@ pub type AuthenticatorAttachment {
   CrossPlatform
 }
 
-/// Options for registration challenge generation.
+/// Optional knobs for registration challenge generation. The required
+/// `relying_party`, `user`, and `origins` values are passed directly to
+/// `request`.
 pub type Options {
   Options(
-    /// Relying party identifier and display name.
-    rp: Rp,
-    /// User account identifier, username, and display name.
-    user: User,
-    /// Allow-list of acceptable origins (e.g., `["https://example.com"]`).
-    /// The authenticator-signed `clientDataJSON.origin` must match one entry.
-    origins: List(String),
-    /// Timeout in milliseconds for the ceremony. Defaults to 60000.
-    timeout: Int,
+    /// Timeout for the ceremony. Defaults to 1 minute.
+    timeout: Duration,
     /// Attestation conveyance preference. Defaults to none.
     attestation: Attestation,
-    /// Restrict authenticator type. `None` allows any.
+    /// Restrict authenticator type. `option.None` allows any.
     authenticator_attachment: Option(AuthenticatorAttachment),
     /// Discoverable credential requirement. Defaults to preferred.
     resident_key: ResidentKey,
@@ -96,7 +97,10 @@ pub type Options {
     user_presence: glasslock.UserPresence,
     /// Whether to allow cross-origin requests. Defaults to `False`.
     allow_cross_origin: Bool,
-    /// Accepted signing algorithms. Defaults to `[Es256]`.
+    /// Accepted signing algorithms, in preference order (the authenticator
+    /// picks the first it supports). Defaults to `[Es256]` because it is the
+    /// one algorithm every mainstream authenticator handles; opt in to
+    /// `Ed25519` or `Rs256` when broader coverage is desired.
     algorithms: List(Algorithm),
     /// Credential IDs to exclude (prevent re-registration).
     exclude_credentials: List(glasslock.CredentialId),
@@ -115,9 +119,16 @@ pub type ResidentKey {
   ResidentKeyRequired
 }
 
-/// Relying party information.
-pub type Rp {
-  Rp(id: String, name: String)
+/// The Relying Party: the service using WebAuthn to register or authenticate
+/// users (i.e. your application).
+///
+/// - `id`: a valid domain string identifying the Relying Party, e.g.
+///   `"example.com"`. The browser binds credentials to this value, so it must
+///   match the effective domain of the page calling WebAuthn.
+/// - `name`: a human-readable name shown to the user by the authenticator
+///   during registration, e.g. `"My App"`.
+pub type RelyingParty {
+  RelyingParty(id: String, name: String)
 }
 
 /// User information for registration.
@@ -127,10 +138,7 @@ pub type User {
 
 /// A finalized registration challenge ready for verification.
 pub opaque type Challenge {
-  RegistrationChallenge(
-    data: internal.ChallengeData,
-    algorithms: List(Algorithm),
-  )
+  Challenge(data: internal.ChallengeData, algorithms: List(Algorithm))
 }
 
 type ParsedResponse {
@@ -142,29 +150,68 @@ type ParsedResponse {
   )
 }
 
-/// Get the challenge bytes from the challenge.
-pub fn challenge_bytes(challenge: Challenge) -> BitArray {
-  challenge.data.bytes
+/// Serialize a registration challenge for out-of-process storage between the
+/// `request` and `verify` steps (signed cookie, Redis, database row). Pair
+/// with `parse_challenge` to rehydrate.
+///
+/// # Security
+///
+/// The returned string is *not* authenticated. If an attacker can tamper with
+/// the stored blob they can redirect verification by forging `rp_id` or
+/// `origins`. Store it somewhere the caller controls (server-side session, a
+/// signed cookie, or authenticated encryption). Wisp's `wisp.Signed` cookie
+/// security is a common fit.
+pub fn encode_challenge(challenge: Challenge) -> String {
+  let algorithms =
+    json.array(challenge.algorithms, fn(alg) {
+      json.int(algorithm_to_cose(alg))
+    })
+
+  [
+    #("v", json.int(1)),
+    #("kind", json.string("registration")),
+    ..internal.encode_challenge_data_fields(challenge.data)
+  ]
+  |> list.append([#("algorithms", algorithms)])
+  |> json.object
+  |> json.to_string
 }
 
-/// Get the list of expected origins from the challenge. Order is unspecified.
-pub fn challenge_origins(challenge: Challenge) -> List(String) {
-  set.to_list(challenge.data.origins)
+/// Decode a previously-encoded registration challenge. Returns a
+/// `ParseError` if the blob is malformed, encodes an authentication
+/// challenge, or uses an unsupported format version.
+pub fn parse_challenge(
+  encoded encoded: String,
+) -> Result(Challenge, glasslock.Error) {
+  use #(version, kind, data_result, cose_algs) <- result.try(
+    json.parse(encoded, parsed_challenge_decoder())
+    |> result.replace_error(glasslock.ParseError("Invalid challenge encoding")),
+  )
+  use _ <- result.try(internal.check_challenge_version(version))
+  use _ <- result.try(internal.check_challenge_kind(kind, "registration"))
+  use data <- result.try(data_result)
+  use algorithms <- result.try(list.try_map(cose_algs, algorithm_from_cose))
+  Ok(Challenge(data:, algorithms:))
 }
 
-/// Get the RP ID from the challenge.
-pub fn challenge_rp_id(challenge: Challenge) -> String {
-  challenge.data.rp_id
+fn parsed_challenge_decoder() -> decode.Decoder(
+  #(Int, String, Result(internal.ChallengeData, glasslock.Error), List(Int)),
+) {
+  use version <- decode.field("v", decode.int)
+  use kind <- decode.field("kind", decode.string)
+  use data_result <- decode.then(internal.challenge_data_decoder())
+  use algorithms <- decode.optional_field(
+    "algorithms",
+    [],
+    decode.list(decode.int),
+  )
+  decode.success(#(version, kind, data_result, algorithms))
 }
 
-/// Returns default options with placeholder values for `rp`, `user`, and `origins`
-/// that must be overridden via record update syntax before use.
+/// Returns an `Options` record with default values.
 pub fn default_options() -> Options {
   Options(
-    rp: Rp(id: "", name: ""),
-    user: User(id: <<>>, name: "", display_name: ""),
-    origins: [],
-    timeout: 60_000,
+    timeout: duration.minutes(1),
     attestation: AttestationNone,
     authenticator_attachment: option.None,
     resident_key: ResidentKeyPreferred,
@@ -180,13 +227,18 @@ pub fn default_options() -> Options {
 /// Generate registration options and a challenge verifier.
 ///
 /// The first element is a `PublicKeyCredentialCreationOptionsJSON` value
-/// ready to serialise with `gleam/json.to_string` or embed inside a
+/// ready to serialize with `gleam/json.to_string` or embed inside a
 /// response envelope. The second is the verifier to pass to `verify`.
-pub fn generate_options(options: Options) -> #(Json, Challenge) {
+pub fn request(
+  relying_party relying_party: RelyingParty,
+  user user: User,
+  origins origins: List(String),
+  options options: Options,
+) -> #(Json, Challenge) {
   let challenge_bytes = crypto.random_bytes(32)
   let challenge_b64 = bit_array.base64_url_encode(challenge_bytes, False)
 
-  let user_id_b64 = bit_array.base64_url_encode(options.user.id, False)
+  let user_id_b64 = bit_array.base64_url_encode(user.id, False)
 
   let pub_key_params =
     list.map(options.algorithms, fn(alg) {
@@ -220,20 +272,20 @@ pub fn generate_options(options: Options) -> #(Json, Challenge) {
         #(
           "rp",
           json.object([
-            #("id", json.string(options.rp.id)),
-            #("name", json.string(options.rp.name)),
+            #("id", json.string(relying_party.id)),
+            #("name", json.string(relying_party.name)),
           ]),
         ),
         #(
           "user",
           json.object([
             #("id", json.string(user_id_b64)),
-            #("name", json.string(options.user.name)),
-            #("displayName", json.string(options.user.display_name)),
+            #("name", json.string(user.name)),
+            #("displayName", json.string(user.display_name)),
           ]),
         ),
         #("pubKeyCredParams", json.preprocessed_array(pub_key_params)),
-        #("timeout", json.int(options.timeout)),
+        #("timeout", json.int(duration.to_milliseconds(options.timeout))),
         #(
           "attestation",
           json.string(attestation_to_string(options.attestation)),
@@ -247,11 +299,11 @@ pub fn generate_options(options: Options) -> #(Json, Challenge) {
     )
 
   let challenge =
-    RegistrationChallenge(
+    Challenge(
       data: internal.ChallengeData(
         bytes: challenge_bytes,
-        origins: set.from_list(options.origins),
-        rp_id: options.rp.id,
+        origins: set.from_list(origins),
+        rp_id: relying_party.id,
         user_verification: options.user_verification,
         user_presence: options.user_presence,
         allow_cross_origin: options.allow_cross_origin,
@@ -268,6 +320,18 @@ fn algorithm_to_cose(alg: Algorithm) -> Int {
     Es256 -> -7
     Ed25519 -> -8
     Rs256 -> -257
+  }
+}
+
+fn algorithm_from_cose(cose_alg: Int) -> Result(Algorithm, glasslock.Error) {
+  case cose_alg {
+    -7 -> Ok(Es256)
+    -8 -> Ok(Ed25519)
+    -257 -> Ok(Rs256)
+    _ ->
+      Error(glasslock.ParseError(
+        "Unsupported algorithm: " <> int.to_string(cose_alg),
+      ))
   }
 }
 
@@ -319,9 +383,9 @@ fn resident_key_to_string(resident_key: ResidentKey) -> String {
   }
 }
 
-/// Verify a RegistrationResponseJSON from the browser.
+/// Verify a response JSON from the browser.
 ///
-/// Takes the JSON response string from the browser and the challenge from `generate_options()`.
+/// Takes the JSON response string from the browser and the challenge from `request()`.
 /// Returns the verified credential on success.
 pub fn verify(
   response_json response_json: String,

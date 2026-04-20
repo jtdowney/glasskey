@@ -100,7 +100,7 @@ pub fn parse_client_data_invalid_challenge_encoding_test() {
 pub fn parse_authentication_auth_data_valid_test() {
   let auth_data =
     testing.build_authentication_authenticator_data(
-      rp_id: "example.com",
+      relying_party_id: "example.com",
       flags: testing.default_flags(),
       sign_count: 42,
     )
@@ -114,7 +114,7 @@ pub fn parse_authentication_auth_data_valid_test() {
 pub fn parse_registration_auth_data_missing_credential_test() {
   let auth_data =
     testing.build_authentication_authenticator_data(
-      rp_id: "example.com",
+      relying_party_id: "example.com",
       flags: testing.default_flags(),
       sign_count: 0,
     )
@@ -292,16 +292,15 @@ pub fn sign_count_monotonicity_test() {
           sign_count: stored,
         )
 
-      let defaults = authentication.default_options()
-      let options =
-        authentication.Options(
-          ..defaults,
-          rp_id: "example.com",
+      let #(_, challenge) =
+        authentication.request(
+          relying_party_id: "example.com",
           origins: ["https://example.com"],
-          allow_credentials: [glasslock.CredentialId(credential_id)],
+          options: authentication.Options(
+            ..authentication.default_options(),
+            allow_credentials: [glasslock.CredentialId(credential_id)],
+          ),
         )
-
-      let #(_, challenge) = authentication.generate_options(options)
       let response =
         testing.build_authentication_response(
           challenge: challenge,
@@ -355,6 +354,29 @@ pub fn verify_client_data_accepts_valid_test() {
       allow_cross_origin: False,
       allowed_top_origins: [],
     )
+}
+
+pub fn verify_client_data_rejects_empty_origins_test() {
+  let challenge = <<1, 2, 3, 4>>
+  let cd =
+    internal.ClientData(
+      type_: "webauthn.create",
+      challenge: challenge,
+      origin: "https://example.com",
+      cross_origin: False,
+      top_origin: option.None,
+    )
+  assert internal.verify_client_data(
+      client_data: cd,
+      expected_type: "webauthn.create",
+      expected_challenge: challenge,
+      expected_origins: set.from_list([]),
+      allow_cross_origin: False,
+      allowed_top_origins: [],
+    )
+    == Error(glasslock.ParseError(
+      "no allowed origins configured; pass a non-empty origins list to request",
+    ))
 }
 
 pub fn verify_client_data_rejects_wrong_type_test() {
@@ -470,7 +492,7 @@ pub fn verify_rp_id_accepts_matching_hash_test() {
 pub fn verify_rp_id_rejects_mismatching_hash_test() {
   let assert Ok(rp_id_hash) =
     crypto.hash(hash.Sha256, bit_array.from_string("evil.com"))
-  let assert Error(glasslock.VerificationMismatch(glasslock.RpIdField)) =
+  let assert Error(glasslock.VerificationMismatch(glasslock.RelyingPartyIdField)) =
     internal.verify_rp_id(rp_id_hash, "example.com")
 }
 

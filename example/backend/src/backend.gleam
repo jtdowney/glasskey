@@ -1,6 +1,5 @@
 import backend/credentials
 import backend/router
-import backend/sessions
 import backend/web
 import gleam/erlang/process
 import mist
@@ -10,12 +9,10 @@ import wisp/wisp_mist
 pub fn main() {
   wisp.configure_logger()
 
-  let assert Ok(session_store) = sessions.start()
   let assert Ok(credential_store) = credentials.open("priv/storage")
 
   let ctx =
     web.Context(
-      sessions: session_store,
       credentials: credential_store,
       rp_id: "localhost",
       rp_name: "Glasslock Example",

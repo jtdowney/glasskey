@@ -21,16 +21,17 @@ gleam add glasslock
 import glasslock/registration
 
 // 1. Generate options to send to the browser
-let options =
-  registration.Options(
-    ..registration.default_options(),
-    rp: registration.Rp(id: "example.com", name: "My App"),
+let #(options_json, challenge) =
+  registration.request(
+    relying_party: registration.RelyingParty(id: "example.com", name: "My App"),
     user: registration.User(id: user_id, name: username, display_name: username),
-    origin: "https://example.com",
+    origins: ["https://example.com"],
+    options: registration.default_options(),
   )
-
-let #(options_json, challenge) = registration.generate_options(options)
-// Send options_json to the browser, store challenge in session
+// Send options_json to the browser. On a single node, keep `challenge`
+// in memory (e.g. an actor keyed by session id). For multi-node or
+// signed-cookie storage, serialize with `registration.encode_challenge`
+// (returns a JSON string) and hydrate with `registration.parse_challenge`.
 
 // 2. Verify the browser's response
 case registration.verify(response_json:, challenge:) {
@@ -48,16 +49,17 @@ case registration.verify(response_json:, challenge:) {
 import glasslock/authentication
 
 // 1. Generate options to send to the browser
-let options =
-  authentication.Options(
-    ..authentication.default_options(),
-    rp_id: "example.com",
-    origin: "https://example.com",
-    allow_credentials: [],  // Empty for discoverable credentials (passkeys)
+// (empty allow_credentials is the default — discoverable/passkey flow)
+let #(options_json, challenge) =
+  authentication.request(
+    relying_party_id: "example.com",
+    origins: ["https://example.com"],
+    options: authentication.default_options(),
   )
-
-let #(options_json, challenge) = authentication.generate_options(options)
-// Send options_json to the browser, store challenge in session
+// Send options_json to the browser. On a single node, keep `challenge`
+// in memory (e.g. an actor keyed by session id). For multi-node or
+// signed-cookie storage, serialize with `authentication.encode_challenge`
+// (returns a JSON string) and hydrate with `authentication.parse_challenge`.
 
 // 2. Verify the browser's response
 case authentication.verify(response_json:, challenge:, stored: stored_credential) {

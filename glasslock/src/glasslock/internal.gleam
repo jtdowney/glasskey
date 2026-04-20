@@ -510,6 +510,122 @@ pub fn user_verification_to_string(
   }
 }
 
+/// Parses a WebAuthn user-verification string into a UserVerification enum.
+pub fn user_verification_from_string(
+  value: String,
+) -> Result(glasslock.UserVerification, glasslock.Error) {
+  case value {
+    "required" -> Ok(glasslock.VerificationRequired)
+    "preferred" -> Ok(glasslock.VerificationPreferred)
+    "discouraged" -> Ok(glasslock.VerificationDiscouraged)
+    _ -> Error(glasslock.ParseError("Invalid user_verification: " <> value))
+  }
+}
+
+/// Converts a UserPresence enum to its string representation (serialization only).
+pub fn user_presence_to_string(presence: glasslock.UserPresence) -> String {
+  case presence {
+    glasslock.PresenceRequired -> "required"
+    glasslock.PresencePreferred -> "preferred"
+    glasslock.PresenceDiscouraged -> "discouraged"
+  }
+}
+
+/// Parses a user-presence string into a UserPresence enum.
+pub fn user_presence_from_string(
+  value: String,
+) -> Result(glasslock.UserPresence, glasslock.Error) {
+  case value {
+    "required" -> Ok(glasslock.PresenceRequired)
+    "preferred" -> Ok(glasslock.PresencePreferred)
+    "discouraged" -> Ok(glasslock.PresenceDiscouraged)
+    _ -> Error(glasslock.ParseError("Invalid user_presence: " <> value))
+  }
+}
+
+/// Rejects unknown challenge blob format versions. Only `1` is supported today.
+pub fn check_challenge_version(version: Int) -> Result(Nil, glasslock.Error) {
+  case version {
+    1 -> Ok(Nil)
+    _ ->
+      Error(glasslock.ParseError(
+        "Unsupported challenge version: " <> int.to_string(version),
+      ))
+  }
+}
+
+/// Rejects a challenge blob whose `kind` does not match the expected ceremony.
+pub fn check_challenge_kind(
+  actual: String,
+  expected: String,
+) -> Result(Nil, glasslock.Error) {
+  case actual == expected {
+    True -> Ok(Nil)
+    False ->
+      Error(glasslock.ParseError(
+        "Expected " <> expected <> " challenge, got " <> actual,
+      ))
+  }
+}
+
+/// Emits the seven fields that are shared between registration and authentication
+/// challenge blobs. Callers prepend the version + kind tag and append any
+/// ceremony-specific fields (e.g. `algorithms` or `allow_credentials`).
+pub fn encode_challenge_data_fields(
+  data: ChallengeData,
+) -> List(#(String, json.Json)) {
+  [
+    #("bytes", json.string(bit_array.base64_url_encode(data.bytes, False))),
+    #("rp_id", json.string(data.rp_id)),
+    #("origins", json.array(set.to_list(data.origins), json.string)),
+    #(
+      "user_verification",
+      json.string(user_verification_to_string(data.user_verification)),
+    ),
+    #("user_presence", json.string(user_presence_to_string(data.user_presence))),
+    #("allow_cross_origin", json.bool(data.allow_cross_origin)),
+    #("allowed_top_origins", json.array(data.allowed_top_origins, json.string)),
+  ]
+}
+
+/// Decoder for the seven shared challenge fields that both ceremonies emit.
+///
+/// Composed with `decode.then` inside each ceremony module's decoder so
+/// version/kind and ceremony-specific fields can be read from the same root
+/// object. Returns a `Result` so validation failures (bad base64url, unknown
+/// user-verification string) surface their specific `ParseError` messages
+/// rather than a generic decode failure.
+pub fn challenge_data_decoder() -> decode.Decoder(
+  Result(ChallengeData, glasslock.Error),
+) {
+  use bytes_b64 <- decode.field("bytes", decode.string)
+  use rp_id <- decode.field("rp_id", decode.string)
+  use origins <- decode.field("origins", decode.list(decode.string))
+  use user_verification <- decode.field("user_verification", decode.string)
+  use user_presence <- decode.field("user_presence", decode.string)
+  use allow_cross_origin <- decode.field("allow_cross_origin", decode.bool)
+  use allowed_top_origins <- decode.field(
+    "allowed_top_origins",
+    decode.list(decode.string),
+  )
+  decode.success({
+    use bytes <- result.try(decode_base64url(bytes_b64, "bytes"))
+    use verification <- result.try(user_verification_from_string(
+      user_verification,
+    ))
+    use presence <- result.try(user_presence_from_string(user_presence))
+    Ok(ChallengeData(
+      bytes:,
+      origins: set.from_list(origins),
+      rp_id:,
+      user_verification: verification,
+      user_presence: presence,
+      allow_cross_origin:,
+      allowed_top_origins:,
+    ))
+  })
+}
+
 /// Validates client data fields against expected ceremony values.
 ///
 /// `expected_origins` is an allow-list: the authenticator-signed
@@ -522,6 +638,12 @@ pub fn verify_client_data(
   allow_cross_origin allow_cross_origin: Bool,
   allowed_top_origins allowed_top_origins: List(String),
 ) -> Result(Nil, glasslock.Error) {
+  use <- bool.guard(
+    when: set.is_empty(expected_origins),
+    return: Error(glasslock.ParseError(
+      "no allowed origins configured; pass a non-empty origins list to request",
+    )),
+  )
   use <- bool.guard(
     when: client_data.type_ != expected_type,
     return: Error(glasslock.VerificationMismatch(glasslock.TypeField)),
@@ -564,7 +686,7 @@ pub fn verify_rp_id(
   )
   use <- bool.guard(
     when: actual_hash != expected_hash,
-    return: Error(glasslock.VerificationMismatch(glasslock.RpIdField)),
+    return: Error(glasslock.VerificationMismatch(glasslock.RelyingPartyIdField)),
   )
   Ok(Nil)
 }

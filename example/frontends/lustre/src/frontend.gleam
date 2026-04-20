@@ -73,7 +73,7 @@ fn navigate(
 
 fn abort_if_conditional(page: model.Page) -> Nil {
   case page {
-    model.LoginPage(stage: model.LoginConditional(abort:, ..)) -> abort()
+    model.LoginPage(stage: model.LoginConditional(abort:)) -> abort()
     _ -> Nil
   }
 }
@@ -94,17 +94,13 @@ fn start_registration(m: model.Model) -> #(model.Model, Effect(model.Msg)) {
 
 fn handle_register_begin(
   m: model.Model,
-  result: Result(model.BeginResponse(glasskey.RegistrationOptions), String),
+  result: Result(glasskey.RegistrationOptions, String),
 ) -> #(model.Model, Effect(model.Msg)) {
   case m.page, result {
-    model.RegisterPage(stage: model.RegisterBeginning),
-      Ok(model.BeginResponse(session_id:, options:))
-    -> #(
+    model.RegisterPage(stage: model.RegisterBeginning), Ok(options) -> #(
       model.Model(
         ..m,
-        page: model.RegisterPage(stage: model.RegisterAwaitingAuthenticator(
-          session_id:,
-        )),
+        page: model.RegisterPage(stage: model.RegisterAwaitingAuthenticator),
         status: "Waiting for authenticator...",
       ),
       registration_effect(options),
@@ -126,22 +122,16 @@ fn handle_registration_result(
   result: Result(String, glasskey.Error),
 ) -> #(model.Model, Effect(model.Msg)) {
   case m.page, result {
-    model.RegisterPage(stage: model.RegisterAwaitingAuthenticator(session_id:)),
-      Ok(response)
+    model.RegisterPage(stage: model.RegisterAwaitingAuthenticator), Ok(response)
     -> #(
       model.Model(
         ..m,
-        page: model.RegisterPage(stage: model.RegisterVerifying(session_id:)),
+        page: model.RegisterPage(stage: model.RegisterVerifying),
         status: "Verifying with server...",
       ),
-      api.register_complete(
-        session_id,
-        response,
-        model.GotRegisterCompleteResponse,
-      ),
+      api.register_complete(response, model.GotRegisterCompleteResponse),
     )
-    model.RegisterPage(stage: model.RegisterAwaitingAuthenticator(..)),
-      Error(error)
+    model.RegisterPage(stage: model.RegisterAwaitingAuthenticator), Error(error)
     -> #(
       model.Model(
         ..m,
@@ -159,7 +149,7 @@ fn handle_register_complete(
   result: Result(Nil, String),
 ) -> #(model.Model, Effect(model.Msg)) {
   case m.page, result {
-    model.RegisterPage(stage: model.RegisterVerifying(..)), Ok(Nil) -> #(
+    model.RegisterPage(stage: model.RegisterVerifying), Ok(Nil) -> #(
       model.Model(
         ..m,
         page: model.RegisterPage(stage: model.RegisterIdle),
@@ -167,7 +157,7 @@ fn handle_register_complete(
       ),
       effect.none(),
     )
-    model.RegisterPage(stage: model.RegisterVerifying(..)), Error(message) -> #(
+    model.RegisterPage(stage: model.RegisterVerifying), Error(message) -> #(
       model.Model(
         ..m,
         page: model.RegisterPage(stage: model.RegisterIdle),
@@ -196,12 +186,11 @@ fn start_modal_login(m: model.Model) -> #(model.Model, Effect(model.Msg)) {
 
 fn handle_login_begin(
   m: model.Model,
-  result: Result(model.BeginResponse(glasskey.AuthenticationOptions), String),
+  result: Result(glasskey.AuthenticationOptions, String),
 ) -> #(model.Model, Effect(model.Msg)) {
   case m.page, result {
-    model.LoginPage(stage: model.LoginSettingUpConditional),
-      Ok(model.BeginResponse(session_id:, options:))
-    -> start_conditional(m, session_id, options)
+    model.LoginPage(stage: model.LoginSettingUpConditional), Ok(options) ->
+      start_conditional(m, options)
     model.LoginPage(stage: model.LoginSettingUpConditional), Error(message) -> #(
       model.Model(
         ..m,
@@ -216,7 +205,6 @@ fn handle_login_begin(
 
 fn start_conditional(
   m: model.Model,
-  session_id: String,
   options: glasskey.AuthenticationOptions,
 ) -> #(model.Model, Effect(model.Msg)) {
   case glasskey.start_conditional_authentication(options) {
@@ -224,7 +212,6 @@ fn start_conditional(
       model.Model(
         ..m,
         page: model.LoginPage(stage: model.LoginConditional(
-          session_id:,
           abort: conditional.abort,
         )),
         status: "",
@@ -244,15 +231,13 @@ fn start_conditional(
 
 fn handle_modal_login_begin(
   m: model.Model,
-  result: Result(model.BeginResponse(glasskey.AuthenticationOptions), String),
+  result: Result(glasskey.AuthenticationOptions, String),
 ) -> #(model.Model, Effect(model.Msg)) {
   case m.page, result {
-    model.LoginPage(stage: model.LoginModalBeginning),
-      Ok(model.BeginResponse(session_id:, options:))
-    -> #(
+    model.LoginPage(stage: model.LoginModalBeginning), Ok(options) -> #(
       model.Model(
         ..m,
-        page: model.LoginPage(stage: model.LoginModalAwaiting(session_id:)),
+        page: model.LoginPage(stage: model.LoginModalAwaiting),
         status: "Waiting for authenticator...",
       ),
       authentication_effect(options),
@@ -274,15 +259,15 @@ fn handle_auth_result(
   result: Result(String, glasskey.Error),
 ) -> #(model.Model, Effect(model.Msg)) {
   case m.page, result {
-    model.LoginPage(stage: model.LoginModalAwaiting(session_id:)), Ok(response) -> #(
+    model.LoginPage(stage: model.LoginModalAwaiting), Ok(response) -> #(
       model.Model(
         ..m,
-        page: model.LoginPage(stage: model.LoginVerifying(session_id:)),
+        page: model.LoginPage(stage: model.LoginVerifying),
         status: "Verifying with server...",
       ),
-      api.login_complete(session_id, response, model.GotLoginCompleteResponse),
+      api.login_complete(response, model.GotLoginCompleteResponse),
     )
-    model.LoginPage(stage: model.LoginModalAwaiting(..)), Error(error) -> #(
+    model.LoginPage(stage: model.LoginModalAwaiting), Error(error) -> #(
       model.Model(
         ..m,
         page: model.LoginPage(stage: model.LoginReady),
@@ -299,15 +284,13 @@ fn handle_conditional_result(
   result: Result(String, glasskey.Error),
 ) -> #(model.Model, Effect(model.Msg)) {
   case m.page, result {
-    model.LoginPage(stage: model.LoginConditional(session_id:, ..)),
-      Ok(response)
-    -> #(
+    model.LoginPage(stage: model.LoginConditional(..)), Ok(response) -> #(
       model.Model(
         ..m,
-        page: model.LoginPage(stage: model.LoginVerifying(session_id:)),
+        page: model.LoginPage(stage: model.LoginVerifying),
         status: "Verifying with server...",
       ),
-      api.login_complete(session_id, response, model.GotLoginCompleteResponse),
+      api.login_complete(response, model.GotLoginCompleteResponse),
     )
     model.LoginPage(stage: model.LoginConditional(..)), Error(glasskey.Aborted) -> #(
       model.Model(..m, page: model.LoginPage(stage: model.LoginReady)),
@@ -330,11 +313,11 @@ fn handle_login_complete(
   result: Result(String, String),
 ) -> #(model.Model, Effect(model.Msg)) {
   case m.page, result {
-    model.LoginPage(stage: model.LoginVerifying(..)), Ok(username) -> #(
+    model.LoginPage(stage: model.LoginVerifying), Ok(username) -> #(
       model.Model(..m, page: model.WelcomePage(username:), status: ""),
       effect.none(),
     )
-    model.LoginPage(stage: model.LoginVerifying(..)), Error(message) -> #(
+    model.LoginPage(stage: model.LoginVerifying), Error(message) -> #(
       model.Model(
         ..m,
         page: model.LoginPage(stage: model.LoginReady),

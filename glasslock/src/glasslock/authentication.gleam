@@ -6,16 +6,19 @@
 //// import glasslock/authentication
 ////
 //// // Generate options for browser
-//// let #(options_json, challenge) = authentication.generate_options(
-////   authentication.Options(
-////     rp_id: "example.com",
-////     origins: ["https://example.com"],
+//// let #(request_json, challenge) = authentication.request(
+////   relying_party_id: "example.com",
+////   origins: ["https://example.com"],
+////   options: authentication.Options(
+////     ..authentication.default_options(),
 ////     allow_credentials: [stored_credential.id],
-////     ..authentication.default_options()
 ////   ),
 //// )
 ////
-//// // Send options_json to browser, receive response_json back
+//// // Send request_json to browser, receive response_json back. Keep
+//// // `challenge` in memory for a single-node deploy; to span processes
+//// // or nodes, serialize with `authentication.encode_challenge` and
+//// // hydrate it back with `authentication.parse_challenge`.
 ////
 //// // Verify the response
 //// case authentication.verify(response_json:, challenge:, stored: stored_credential) {
@@ -27,17 +30,17 @@
 //// ## Example (discoverable/passkey)
 ////
 //// ```gleam
-//// // Generate options with empty allow_credentials
-//// let #(options_json, challenge) = authentication.generate_options(
-////   authentication.Options(
-////     rp_id: "example.com",
-////     origins: ["https://example.com"],
-////     allow_credentials: [],
-////     ..authentication.default_options()
-////   ),
+//// // Empty allow_credentials is the default (discoverable flow)
+//// let #(request_json, challenge) = authentication.request(
+////   relying_party_id: "example.com",
+////   origins: ["https://example.com"],
+////   options: authentication.default_options(),
 //// )
 ////
-//// // Parse response to get credential_id for lookup
+//// // Parse response to get credential_id for lookup. As above, keep
+//// // `challenge` in memory for a single node, or round-trip through
+//// // `authentication.encode_challenge` / `authentication.parse_challenge`
+//// // to span processes.
 //// case authentication.parse_response(response_json) {
 ////   Ok(info) -> {
 ////     // Look up stored credential by info.credential_id
@@ -64,19 +67,15 @@ import gleam/list
 import gleam/option.{type Option}
 import gleam/result
 import gleam/set
+import gleam/time/duration.{type Duration}
 import kryptos/crypto
 import kryptos/hash
 
-/// Options for authentication challenge generation.
+/// Optional knobs for authentication challenge generation.
 pub type Options {
   Options(
-    /// Relying party identifier (e.g., `"example.com"`).
-    rp_id: String,
-    /// Allow-list of acceptable origins (e.g., `["https://example.com"]`).
-    /// The authenticator-signed `clientDataJSON.origin` must match one entry.
-    origins: List(String),
-    /// Timeout in milliseconds for the ceremony. Defaults to 60000.
-    timeout: Int,
+    /// Timeout for the ceremony. Defaults to 1 minute.
+    timeout: Duration,
     /// User verification requirement. Defaults to preferred.
     user_verification: glasslock.UserVerification,
     /// User presence requirement. Defaults to required.
@@ -100,7 +99,7 @@ pub type ResponseInfo {
 
 /// A finalized authentication challenge ready for verification.
 pub opaque type Challenge {
-  AuthenticationChallenge(
+  Challenge(
     data: internal.ChallengeData,
     allowed_credentials: List(glasslock.CredentialId),
   )
@@ -117,28 +116,78 @@ type ParsedResponse {
   )
 }
 
-/// Get the challenge bytes from the challenge.
-pub fn challenge_bytes(challenge: Challenge) -> BitArray {
-  challenge.data.bytes
+/// Serialize an authentication challenge for out-of-process storage between
+/// the `request` and `verify` steps (signed cookie, Redis, database row).
+/// Pair with `parse_challenge` to rehydrate.
+///
+/// # Security
+///
+/// The returned string is *not* authenticated. If an attacker can tamper with
+/// the stored blob they can redirect verification by forging `rp_id` or
+/// `origins`. Store it somewhere the caller controls (server-side session, a
+/// signed cookie, or authenticated encryption). Wisp's `wisp.Signed` cookie
+/// security is a common fit.
+pub fn encode_challenge(challenge: Challenge) -> String {
+  let allow_credentials =
+    json.array(challenge.allowed_credentials, fn(cred_id) {
+      let glasslock.CredentialId(raw) = cred_id
+      json.string(bit_array.base64_url_encode(raw, False))
+    })
+
+  [
+    #("v", json.int(1)),
+    #("kind", json.string("authentication")),
+    ..internal.encode_challenge_data_fields(challenge.data)
+  ]
+  |> list.append([#("allow_credentials", allow_credentials)])
+  |> json.object
+  |> json.to_string
 }
 
-/// Get the list of expected origins from the challenge.
-pub fn challenge_origins(challenge: Challenge) -> List(String) {
-  set.to_list(challenge.data.origins)
+/// Decode a previously-encoded authentication challenge. Returns a
+/// `ParseError` if the blob is malformed, encodes a registration challenge,
+/// or uses an unsupported format version.
+pub fn parse_challenge(
+  encoded encoded: String,
+) -> Result(Challenge, glasslock.Error) {
+  use #(version, kind, data_result, allow_ids) <- result.try(
+    json.parse(encoded, parsed_challenge_decoder())
+    |> result.replace_error(glasslock.ParseError("Invalid challenge encoding")),
+  )
+  use _ <- result.try(internal.check_challenge_version(version))
+  use _ <- result.try(internal.check_challenge_kind(kind, "authentication"))
+  use data <- result.try(data_result)
+  use allowed_credentials <- result.try(parse_allow_credentials(allow_ids))
+  Ok(Challenge(data:, allowed_credentials:))
 }
 
-/// Get the RP ID from the challenge.
-pub fn challenge_rp_id(challenge: Challenge) -> String {
-  challenge.data.rp_id
+fn parsed_challenge_decoder() -> decode.Decoder(
+  #(Int, String, Result(internal.ChallengeData, glasslock.Error), List(String)),
+) {
+  use version <- decode.field("v", decode.int)
+  use kind <- decode.field("kind", decode.string)
+  use data_result <- decode.then(internal.challenge_data_decoder())
+  use allow_credentials <- decode.optional_field(
+    "allow_credentials",
+    [],
+    decode.list(decode.string),
+  )
+  decode.success(#(version, kind, data_result, allow_credentials))
 }
 
-/// Returns default options with empty `rp_id` and `origins` values
-/// that must be overridden before use.
+fn parse_allow_credentials(
+  encoded: List(String),
+) -> Result(List(glasslock.CredentialId), glasslock.Error) {
+  list.try_map(encoded, fn(id_b64) {
+    internal.decode_base64url(id_b64, "allow_credentials")
+    |> result.map(glasslock.CredentialId)
+  })
+}
+
+/// Returns an `Options` record with default values.
 pub fn default_options() -> Options {
   Options(
-    rp_id: "",
-    origins: [],
-    timeout: 60_000,
+    timeout: duration.minutes(1),
     user_verification: glasslock.VerificationPreferred,
     user_presence: glasslock.PresenceRequired,
     allow_cross_origin: False,
@@ -150,9 +199,13 @@ pub fn default_options() -> Options {
 /// Generate authentication options and a challenge verifier.
 ///
 /// The first element is a `PublicKeyCredentialRequestOptionsJSON` value
-/// ready to serialise with `gleam/json.to_string` or embed inside a
+/// ready to serialize with `gleam/json.to_string` or embed inside a
 /// response envelope. The second is the verifier to pass to `verify`.
-pub fn generate_options(options: Options) -> #(Json, Challenge) {
+pub fn request(
+  relying_party_id relying_party_id: String,
+  origins origins: List(String),
+  options options: Options,
+) -> #(Json, Challenge) {
   let challenge_bytes = crypto.random_bytes(32)
   let challenge_b64 = bit_array.base64_url_encode(challenge_bytes, False)
 
@@ -160,8 +213,8 @@ pub fn generate_options(options: Options) -> #(Json, Challenge) {
     json.object(
       [
         #("challenge", json.string(challenge_b64)),
-        #("rpId", json.string(options.rp_id)),
-        #("timeout", json.int(options.timeout)),
+        #("rpId", json.string(relying_party_id)),
+        #("timeout", json.int(duration.to_milliseconds(options.timeout))),
         #(
           "userVerification",
           json.string(internal.user_verification_to_string(
@@ -176,11 +229,11 @@ pub fn generate_options(options: Options) -> #(Json, Challenge) {
     )
 
   let challenge =
-    AuthenticationChallenge(
+    Challenge(
       data: internal.ChallengeData(
         bytes: challenge_bytes,
-        origins: set.from_list(options.origins),
-        rp_id: options.rp_id,
+        origins: set.from_list(origins),
+        rp_id: relying_party_id,
         user_verification: options.user_verification,
         user_presence: options.user_presence,
         allow_cross_origin: options.allow_cross_origin,
@@ -210,7 +263,7 @@ pub fn parse_response(
 
 /// Verify a challenge response from the browser.
 ///
-/// Takes the JSON response string from the browser, the challenge from `generate_options()`,
+/// Takes the JSON response string from the browser, the challenge from `request()`,
 /// and the stored credential to verify against.
 ///
 /// For discoverable flow: call `parse_response()` first to get credential_id for lookup.

@@ -409,7 +409,7 @@ fn extract_registration_fields(
 ) -> RegistrationCredential
 
 /// Decoder for the `PublicKeyCredentialRequestOptionsJSON` shape produced by
-/// `glasslock/authentication.generate_options`.
+/// `glasslock/authentication.request`.
 ///
 /// Use this when decoding the server's envelope response so the `options`
 /// subtree comes out as a typed `AuthenticationOptions` ready to pass to
@@ -446,7 +446,7 @@ pub fn authentication_options_decoder() -> decode.Decoder(AuthenticationOptions)
 }
 
 /// Decoder for the `PublicKeyCredentialCreationOptionsJSON` shape produced by
-/// `glasslock/registration.generate_options`.
+/// `glasslock/registration.request`.
 ///
 /// Use this when decoding the server's envelope response so the `options`
 /// subtree comes out as a typed `RegistrationOptions` ready to pass to
@@ -553,12 +553,12 @@ fn authenticator_attachment_decoder() -> decode.Decoder(AuthenticatorAttachment)
 fn optional_attachment_decoder() -> decode.Decoder(
   Option(AuthenticatorAttachment),
 ) {
-  decode.optional_field(
+  use attachment <- decode.optional_field(
     "authenticatorAttachment",
     option.None,
     decode.optional(authenticator_attachment_decoder()),
-    decode.success,
   )
+  decode.success(attachment)
 }
 
 fn base64url_decoder() -> decode.Decoder(BitArray) {

@@ -30,20 +30,12 @@ pub fn decode_cose_key_map_test() {
 
   assert list.length(entries) == 5
 
-  let assert Ok(#(cbor.Int(1), cbor.Int(2))) =
-    list.find(entries, fn(e) { e.0 == cbor.Int(1) })
+  assert list.key_find(entries, cbor.Int(1)) == Ok(cbor.Int(2))
+  assert list.key_find(entries, cbor.Int(3)) == Ok(cbor.Int(-7))
+  assert list.key_find(entries, cbor.Int(-1)) == Ok(cbor.Int(1))
 
-  let assert Ok(#(cbor.Int(3), cbor.Int(-7))) =
-    list.find(entries, fn(e) { e.0 == cbor.Int(3) })
-
-  let assert Ok(#(cbor.Int(-1), cbor.Int(1))) =
-    list.find(entries, fn(e) { e.0 == cbor.Int(-1) })
-
-  let assert Ok(#(cbor.Int(-2), cbor.Bytes(_x))) =
-    list.find(entries, fn(e) { e.0 == cbor.Int(-2) })
-
-  let assert Ok(#(cbor.Int(-3), cbor.Bytes(_y))) =
-    list.find(entries, fn(e) { e.0 == cbor.Int(-3) })
+  let assert Ok(cbor.Bytes(_x)) = list.key_find(entries, cbor.Int(-2))
+  let assert Ok(cbor.Bytes(_y)) = list.key_find(entries, cbor.Int(-3))
 }
 
 pub fn decode_partial_returns_remaining_bytes_test() {
@@ -55,20 +47,24 @@ pub fn decode_partial_returns_remaining_bytes_test() {
 
 pub fn decode_all_rejects_trailing_bytes_test() {
   let input = <<0x18, 0x2A, 0xFF>>
-  let assert Error(glasslock.ParseError(_)) = cbor.decode_all(input)
+  assert cbor.decode_all(input)
+    == Error(glasslock.ParseError("Unexpected trailing bytes after CBOR value"))
 }
 
 pub fn decode_empty_input_test() {
-  let assert Error(glasslock.ParseError(_)) = cbor.decode(<<>>)
-  let assert Error(glasslock.ParseError(_)) = cbor.decode_all(<<>>)
+  assert cbor.decode(<<>>)
+    == Error(glasslock.ParseError("Unexpected end of CBOR input"))
+  assert cbor.decode_all(<<>>)
+    == Error(glasslock.ParseError("Unexpected end of CBOR input"))
 }
 
 pub fn decode_truncated_input_test() {
-  let assert Error(glasslock.ParseError(_)) = cbor.decode(<<0x18>>)
-
-  let assert Error(glasslock.ParseError(_)) = cbor.decode(<<0x19, 0x01>>)
-
-  let assert Error(glasslock.ParseError(_)) = cbor.decode(<<0x43, 0x01, 0x02>>)
+  assert cbor.decode(<<0x18>>)
+    == Error(glasslock.ParseError("Truncated CBOR: expected 1 byte argument"))
+  assert cbor.decode(<<0x19, 0x01>>)
+    == Error(glasslock.ParseError("Truncated CBOR: expected 2 byte argument"))
+  assert cbor.decode(<<0x43, 0x01, 0x02>>)
+    == Error(glasslock.ParseError("Truncated CBOR byte string"))
 }
 
 pub fn decode_negative_integers_test() {

@@ -1,5 +1,4 @@
 import backend/credentials
-import backend/sessions
 import backend/web
 import glasslock/registration
 import gleam/bit_array
@@ -8,6 +7,18 @@ import gleam/dynamic/decode
 import gleam/json
 import gleam/result
 import wisp
+
+const session_cookie = "registration"
+
+const session_max_age = 300
+
+type PendingRegistration {
+  PendingRegistration(
+    username: String,
+    user_id: BitArray,
+    challenge: registration.Challenge,
+  )
+}
 
 pub fn begin(req: wisp.Request, ctx: web.Context) -> wisp.Response {
   use body <- wisp.require_string_body(req)
@@ -22,7 +33,7 @@ pub fn begin(req: wisp.Request, ctx: web.Context) -> wisp.Response {
       json.object([#("error", json.string("invalid json"))])
       |> json.to_string
       |> wisp.json_response(400)
-    Ok(username) -> begin_registration(username, ctx)
+    Ok(username) -> begin_registration(req, username, ctx)
   }
 }
 
@@ -30,9 +41,8 @@ pub fn complete(req: wisp.Request, ctx: web.Context) -> wisp.Response {
   use body <- wisp.require_string_body(req)
 
   let decoder = {
-    use session_id <- decode.field("session_id", decode.string)
     use response <- decode.field("response", decode.string)
-    decode.success(#(session_id, response))
+    decode.success(response)
   }
 
   case json.parse(body, decoder) {
@@ -40,12 +50,15 @@ pub fn complete(req: wisp.Request, ctx: web.Context) -> wisp.Response {
       json.object([#("error", json.string("invalid json"))])
       |> json.to_string
       |> wisp.json_response(400)
-    Ok(#(session_id, response)) ->
-      complete_registration(session_id, response, ctx)
+    Ok(response) -> complete_registration(req, response, ctx)
   }
 }
 
-fn begin_registration(username: String, ctx: web.Context) -> wisp.Response {
+fn begin_registration(
+  req: wisp.Request,
+  username: String,
+  ctx: web.Context,
+) -> wisp.Response {
   case credentials.get_user(ctx.credentials, username) {
     Ok(_) ->
       json.object([#("error", json.string("username already registered"))])
@@ -53,50 +66,53 @@ fn begin_registration(username: String, ctx: web.Context) -> wisp.Response {
       |> wisp.json_response(409)
     Error(_) -> {
       let user_id = crypto.strong_random_bytes(32)
-      let options =
-        registration.Options(
-          ..registration.default_options(),
-          rp: registration.Rp(id: ctx.rp_id, name: ctx.rp_name),
+      let #(options_json, challenge) =
+        registration.request(
+          relying_party: registration.RelyingParty(
+            id: ctx.rp_id,
+            name: ctx.rp_name,
+          ),
           user: registration.User(
             id: user_id,
             name: username,
             display_name: username,
           ),
           origins: ctx.origins,
-          resident_key: registration.ResidentKeyRequired,
+          options: registration.Options(
+            ..registration.default_options(),
+            resident_key: registration.ResidentKeyRequired,
+          ),
         )
-      let #(options_json, challenge) = registration.generate_options(options)
 
-      let session_id =
-        crypto.strong_random_bytes(32)
-        |> bit_array.base64_url_encode(False)
+      let pending =
+        encode_pending(PendingRegistration(username:, user_id:, challenge:))
 
-      sessions.set_registration(
-        ctx.sessions,
-        session_id,
-        sessions.Registration(username: username, user_id: user_id, challenge:),
+      json.object([#("options", options_json)])
+      |> json.to_string
+      |> wisp.json_response(200)
+      |> wisp.set_cookie(
+        req,
+        session_cookie,
+        pending,
+        wisp.Signed,
+        session_max_age,
       )
-
-      let response_json =
-        json.object([
-          #("session_id", json.string(session_id)),
-          #("options", options_json),
-        ])
-        |> json.to_string
-
-      wisp.json_response(response_json, 200)
     }
   }
 }
 
 fn complete_registration(
-  session_id: String,
+  req: wisp.Request,
   response_json: String,
   ctx: web.Context,
 ) -> wisp.Response {
   let result = {
+    use raw <- result.try(
+      wisp.get_cookie(req, session_cookie, wisp.Signed)
+      |> result.map_error(fn(_) { #("session not found", 400) }),
+    )
     use session <- result.try(
-      sessions.get_and_delete_registration(ctx.sessions, session_id)
+      decode_pending(raw)
       |> result.map_error(fn(_) { #("session not found", 400) }),
     )
     use credential <- result.map(
@@ -119,9 +135,50 @@ fn complete_registration(
       json.object([#("verified", json.bool(True))])
       |> json.to_string
       |> wisp.json_response(200)
+      |> clear_session(req)
     Error(#(message, status)) ->
       json.object([#("error", json.string(message))])
       |> json.to_string
       |> wisp.json_response(status)
+      |> clear_session(req)
   }
+}
+
+fn clear_session(response: wisp.Response, req: wisp.Request) -> wisp.Response {
+  wisp.set_cookie(response, req, session_cookie, "", wisp.PlainText, 0)
+}
+
+fn encode_pending(pending: PendingRegistration) -> String {
+  json.object([
+    #("username", json.string(pending.username)),
+    #(
+      "user_id",
+      json.string(bit_array.base64_url_encode(pending.user_id, False)),
+    ),
+    #(
+      "challenge",
+      json.string(registration.encode_challenge(pending.challenge)),
+    ),
+  ])
+  |> json.to_string
+}
+
+fn decode_pending(raw: String) -> Result(PendingRegistration, Nil) {
+  let decoder = {
+    use username <- decode.field("username", decode.string)
+    use user_id_b64 <- decode.field("user_id", decode.string)
+    use challenge_encoded <- decode.field("challenge", decode.string)
+    decode.success(#(username, user_id_b64, challenge_encoded))
+  }
+
+  use #(username, user_id_b64, challenge_encoded) <- result.try(
+    json.parse(raw, decoder)
+    |> result.replace_error(Nil),
+  )
+  use user_id <- result.try(bit_array.base64_url_decode(user_id_b64))
+  use challenge <- result.try(
+    registration.parse_challenge(encoded: challenge_encoded)
+    |> result.replace_error(Nil),
+  )
+  Ok(PendingRegistration(username:, user_id:, challenge:))
 }

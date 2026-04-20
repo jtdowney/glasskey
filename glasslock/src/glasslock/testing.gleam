@@ -14,14 +14,13 @@
 //// import glasslock/testing
 ////
 //// pub fn registration_test() {
-////   let #(_, challenge) = registration.generate_options(
-////     registration.Options(
-////       rp: registration.Rp(id: "example.com", name: "Test"),
+////   let #(_, challenge) =
+////     registration.request(
+////       relying_party: registration.RelyingParty(id: "example.com", name: "Test"),
 ////       user: registration.User(id: <<1, 2, 3>>, name: "test", display_name: "Test"),
 ////       origins: ["https://example.com"],
-////       ..registration.default_options()
-////     ),
-////   )
+////       options: registration.default_options(),
+////     )
 ////
 ////   let response = testing.build_registration_response(challenge: challenge)
 ////   let response_json = testing.to_registration_json(response)
@@ -35,6 +34,7 @@ import glasslock/authentication
 import glasslock/internal/cbor
 import glasslock/registration
 import gleam/bit_array
+import gleam/dynamic/decode
 import gleam/int
 import gleam/json
 import gleam/list
@@ -91,12 +91,12 @@ pub type RegistrationResponse {
 
 /// Build authenticator data for authentication (no attested credential).
 pub fn build_authentication_authenticator_data(
-  rp_id rp_id: String,
+  relying_party_id relying_party_id: String,
   flags flags: AuthenticatorFlags,
   sign_count sign_count: Int,
 ) -> BitArray {
   let assert Ok(rp_id_hash) =
-    crypto.hash(hash.Sha256, bit_array.from_string(rp_id))
+    crypto.hash(hash.Sha256, bit_array.from_string(relying_party_id))
   let flags_byte = encode_flags(flags, False)
 
   bit_array.concat([rp_id_hash, <<flags_byte>>, <<sign_count:size(32)>>])
@@ -110,21 +110,17 @@ pub fn build_authentication_response(
   keypair keypair: KeyPair,
   sign_count sign_count: Int,
 ) -> AuthenticationResponse {
+  let fields = authentication_challenge_fields(challenge)
+  let assert Ok(origin) = list.first(fields.origins)
   let authenticator_data =
     build_authentication_authenticator_data(
-      rp_id: authentication.challenge_rp_id(challenge),
+      relying_party_id: fields.rp_id,
       flags: default_flags(),
       sign_count: sign_count,
     )
 
-  let assert Ok(origin) =
-    list.first(authentication.challenge_origins(challenge))
   let client_data_json =
-    build_client_data_get(
-      challenge: authentication.challenge_bytes(challenge),
-      origin:,
-      cross_origin: False,
-    )
+    build_client_data_get(challenge: fields.bytes, origin:, cross_origin: False)
 
   let signature =
     sign_authentication_message(
@@ -385,14 +381,14 @@ pub fn build_attestation_object(auth_data: BitArray) -> BitArray {
 /// Build authenticator data for registration (includes attested credential).
 /// Pass `cose_key(keypair)` for the COSE key parameter.
 pub fn build_registration_authenticator_data(
-  rp_id rp_id: String,
+  relying_party_id relying_party_id: String,
   credential_id credential_id: glasslock.CredentialId,
   cose_key cose_key: BitArray,
   flags flags: AuthenticatorFlags,
   sign_count sign_count: Int,
 ) -> BitArray {
   let assert Ok(rp_id_hash) =
-    crypto.hash(hash.Sha256, bit_array.from_string(rp_id))
+    crypto.hash(hash.Sha256, bit_array.from_string(relying_party_id))
   let flags_byte = encode_flags(flags, True)
   let aaguid = <<0:128>>
   let glasslock.CredentialId(raw_credential_id) = credential_id
@@ -431,19 +427,20 @@ pub fn build_registration_response_with_keypair(
   challenge challenge: registration.Challenge,
   keypair keypair: KeyPair,
 ) -> RegistrationResponse {
+  let fields = registration_challenge_fields(challenge)
+  let assert Ok(origin) = list.first(fields.origins)
   let credential_id = glasslock.CredentialId(crypto.random_bytes(32))
   let auth_data =
     build_registration_authenticator_data(
-      rp_id: registration.challenge_rp_id(challenge),
+      relying_party_id: fields.rp_id,
       credential_id:,
       cose_key: cose_key(keypair),
       flags: default_flags(),
       sign_count: 0,
     )
-  let assert Ok(origin) = list.first(registration.challenge_origins(challenge))
   let client_data_json =
     build_client_data_create(
-      challenge: registration.challenge_bytes(challenge),
+      challenge: fields.bytes,
       origin:,
       cross_origin: False,
     )
@@ -500,4 +497,73 @@ pub fn to_registration_json_with(
     #("clientExtensionResults", json.object([])),
   ])
   |> json.to_string
+}
+
+/// Extract the random challenge bytes from a registration challenge.
+/// Exposed for tests that need to construct matching client data.
+pub fn registration_challenge_bytes(
+  challenge: registration.Challenge,
+) -> BitArray {
+  registration_challenge_fields(challenge).bytes
+}
+
+/// Extract the Relying Party ID from a registration challenge.
+pub fn registration_challenge_rp_id(challenge: registration.Challenge) -> String {
+  registration_challenge_fields(challenge).rp_id
+}
+
+/// Extract the expected origins list from a registration challenge.
+pub fn registration_challenge_origins(
+  challenge: registration.Challenge,
+) -> List(String) {
+  registration_challenge_fields(challenge).origins
+}
+
+/// Extract the random challenge bytes from an authentication challenge.
+pub fn authentication_challenge_bytes(
+  challenge: authentication.Challenge,
+) -> BitArray {
+  authentication_challenge_fields(challenge).bytes
+}
+
+/// Extract the Relying Party ID from an authentication challenge.
+pub fn authentication_challenge_rp_id(
+  challenge: authentication.Challenge,
+) -> String {
+  authentication_challenge_fields(challenge).rp_id
+}
+
+/// Extract the expected origins list from an authentication challenge.
+pub fn authentication_challenge_origins(
+  challenge: authentication.Challenge,
+) -> List(String) {
+  authentication_challenge_fields(challenge).origins
+}
+
+type ChallengeFields {
+  ChallengeFields(bytes: BitArray, rp_id: String, origins: List(String))
+}
+
+fn registration_challenge_fields(
+  challenge: registration.Challenge,
+) -> ChallengeFields {
+  decode_challenge_fields(registration.encode_challenge(challenge))
+}
+
+fn authentication_challenge_fields(
+  challenge: authentication.Challenge,
+) -> ChallengeFields {
+  decode_challenge_fields(authentication.encode_challenge(challenge))
+}
+
+fn decode_challenge_fields(encoded: String) -> ChallengeFields {
+  let decoder = {
+    use bytes_b64 <- decode.field("bytes", decode.string)
+    use rp_id <- decode.field("rp_id", decode.string)
+    use origins <- decode.field("origins", decode.list(decode.string))
+    decode.success(#(bytes_b64, rp_id, origins))
+  }
+  let assert Ok(#(bytes_b64, rp_id, origins)) = json.parse(encoded, decoder)
+  let assert Ok(bytes) = bit_array.base64_url_decode(bytes_b64)
+  ChallengeFields(bytes:, rp_id:, origins:)
 }

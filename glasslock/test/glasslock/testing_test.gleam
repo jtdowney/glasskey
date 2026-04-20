@@ -37,7 +37,7 @@ pub fn build_registration_auth_data_roundtrips_test() {
 
   let auth_data =
     testing.build_registration_authenticator_data(
-      rp_id: "example.com",
+      relying_party_id: "example.com",
       credential_id:,
       cose_key: cose_key,
       flags: flags,
@@ -61,7 +61,7 @@ pub fn build_authentication_auth_data_roundtrips_test() {
 
   let auth_data =
     testing.build_authentication_authenticator_data(
-      rp_id: "example.com",
+      relying_party_id: "example.com",
       flags: flags,
       sign_count: 7,
     )
