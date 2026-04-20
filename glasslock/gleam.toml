@@ -1,0 +1,18 @@
+name = "glasslock"
+version = "1.0.0"
+description = "Gleam server-side verification of WebAuthn/FIDO2 credentials"
+licences = ["Apache-2.0"]
+repository = { type = "github", user = "jtdowney", repo = "glasskey", path = "glasslock" }
+links = [
+  { title = "glasskey (browser bindings)", href = "https://hexdocs.pm/glasskey" },
+]
+
+[dependencies]
+gleam_json = ">= 3.1.0 and < 4.0.0"
+gleam_stdlib = ">= 0.67.1 and < 2.0.0"
+gose = ">= 2.1.0 and < 3.0.0"
+kryptos = ">= 1.0.0 and < 2.0.0"
+
+[dev-dependencies]
+qcheck = ">= 1.0.2 and < 2.0.0"
+unitest = ">= 1.0.0 and < 2.0.0"

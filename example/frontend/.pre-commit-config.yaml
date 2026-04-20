@@ -1,0 +1,6 @@
+repos:
+  - repo: https://github.com/jtdowney/pre-commit-gleam
+    rev: v1.0.0
+    hooks:
+      - id: check
+      - id: format

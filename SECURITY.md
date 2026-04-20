@@ -1,0 +1,52 @@
+# Security Policy
+
+## Supported Versions
+
+| Version | Supported          |
+| ------- | ------------------ |
+| 1.x.y   | :white_check_mark: |
+| < 1.0   | :x:                |
+
+## Reporting a Vulnerability
+
+To report a security vulnerability, please use [GitHub Security Advisories](https://github.com/jtdowney/glasskey/security/advisories/new).
+
+**Please do not report security vulnerabilities through public GitHub issues.**
+
+When reporting, include:
+
+- Description of the vulnerability
+- Steps to reproduce
+- Potential impact
+- Any suggested fixes (optional)
+
+You can expect an initial response within 48 hours. We will work with you to understand the issue and coordinate disclosure.
+
+## Security Model
+
+This project consists of two independent libraries for WebAuthn/FIDO2 passkey authentication:
+
+- **glasslock**: server-side credential verification (Erlang and JavaScript targets)
+- **glasskey**: browser WebAuthn API bindings (JavaScript target)
+
+glasslock delegates cryptographic operations to [kryptos](https://github.com/jtdowney/kryptos), which wraps platform-native implementations: Erlang/OTP's `:crypto` module on BEAM, or Node.js `crypto` on JavaScript.
+
+glasskey runs in the browser and delegates to `navigator.credentials` (the Web Authentication API). It handles no cryptography directly.
+
+### Sign Count Verification
+
+After each authentication, glasslock compares the authenticator's reported sign count against the stored value. A sign count that decreases (or drops to zero after previously being nonzero) returns a `SignCountRegression` error, indicating a possible cloned authenticator.
+
+## Supported Algorithm
+
+Only ES256 (ECDSA with P-256 and SHA-256, COSE algorithm -7) is currently supported. Additional algorithms may be added in future versions.
+
+## Runtime Requirements
+
+### glasslock
+
+On Erlang/OTP, use a currently supported OTP version with up-to-date OpenSSL/LibreSSL. On Node.js, use a currently supported LTS version. glasslock depends on kryptos for SHA-256 hashing and ECDSA signature verification, which uses the platform's native crypto implementation on both targets.
+
+### glasskey
+
+Requires a browser with Web Authentication API support (`navigator.credentials`). All major browsers support WebAuthn. The library checks for `window.PublicKeyCredential` before attempting any ceremony and returns `NotSupported` if unavailable.

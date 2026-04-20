@@ -1,0 +1,824 @@
+import glasslock
+import glasslock/authentication
+import glasslock/internal
+import glasslock/internal/cbor
+import glasslock/testing
+import gleam/bit_array
+import gleam/json
+import gleam/option
+import kryptos/crypto
+import kryptos/hash
+import qcheck
+
+fn test_config() -> qcheck.Config {
+  qcheck.default_config()
+  |> qcheck.with_test_count(100)
+}
+
+pub fn sign_verify_round_trip_es256_test() {
+  let keypair = testing.generate_es256_keypair()
+  let glasslock.PublicKey(public_key_cbor) = testing.public_key(keypair)
+  let assert Ok(#(parsed_key, alg)) = internal.parse_public_key(public_key_cbor)
+  test_config()
+  |> qcheck.run(qcheck.fixed_size_byte_aligned_bit_array(64), fn(message) {
+    let signature = testing.sign(keypair:, message:)
+    let assert Ok(Nil) =
+      internal.verify_signature(key: parsed_key, alg:, message:, signature:)
+    Nil
+  })
+}
+
+pub fn sign_verify_round_trip_ed25519_test() {
+  let keypair = testing.generate_ed25519_keypair()
+  let glasslock.PublicKey(public_key_cbor) = testing.public_key(keypair)
+  let assert Ok(#(parsed_key, alg)) = internal.parse_public_key(public_key_cbor)
+  test_config()
+  |> qcheck.run(qcheck.fixed_size_byte_aligned_bit_array(64), fn(message) {
+    let signature = testing.sign(keypair:, message:)
+    let assert Ok(Nil) =
+      internal.verify_signature(key: parsed_key, alg:, message:, signature:)
+    Nil
+  })
+}
+
+pub fn sign_verify_round_trip_rs256_test() {
+  let keypair = testing.generate_rs256_keypair()
+  let glasslock.PublicKey(public_key_cbor) = testing.public_key(keypair)
+  let assert Ok(#(parsed_key, alg)) = internal.parse_public_key(public_key_cbor)
+  test_config()
+  |> qcheck.run(qcheck.fixed_size_byte_aligned_bit_array(64), fn(message) {
+    let signature = testing.sign(keypair:, message:)
+    let assert Ok(Nil) =
+      internal.verify_signature(key: parsed_key, alg:, message:, signature:)
+    Nil
+  })
+}
+
+pub fn parse_client_data_valid_test() {
+  let challenge = <<1, 2, 3, 4>>
+  let client_data =
+    testing.build_client_data_get(
+      challenge: challenge,
+      origin: "https://example.com",
+      cross_origin: False,
+    )
+
+  let assert Ok(cd) = internal.parse_client_data(client_data)
+  assert cd.type_ == "webauthn.get"
+  assert cd.challenge == challenge
+  assert cd.origin == "https://example.com"
+  assert cd.cross_origin == False
+}
+
+pub fn parse_client_data_invalid_utf8_test() {
+  let invalid_utf8 = <<0xFF, 0xFE, 0x00>>
+  let assert Error(glasslock.ParseError("Invalid UTF-8")) =
+    internal.parse_client_data(invalid_utf8)
+}
+
+pub fn parse_client_data_invalid_json_test() {
+  let invalid_json = bit_array.from_string("{not valid json}")
+  let assert Error(glasslock.ParseError("Invalid JSON structure")) =
+    internal.parse_client_data(invalid_json)
+}
+
+pub fn parse_client_data_invalid_challenge_encoding_test() {
+  let bad_json =
+    json.object([
+      #("type", json.string("webauthn.get")),
+      #("challenge", json.string("!!!invalid!!!")),
+      #("origin", json.string("https://example.com")),
+    ])
+    |> json.to_string
+    |> bit_array.from_string
+  let assert Error(glasslock.ParseError("Invalid challenge encoding")) =
+    internal.parse_client_data(bad_json)
+}
+
+pub fn parse_authentication_auth_data_valid_test() {
+  let auth_data =
+    testing.build_authentication_authenticator_data(
+      rp_id: "example.com",
+      flags: testing.default_flags(),
+      sign_count: 42,
+    )
+
+  let assert Ok(ad) = internal.parse_authentication_auth_data(auth_data)
+  assert ad.user_present == True
+  assert ad.user_verified == False
+  assert ad.sign_count == 42
+}
+
+pub fn parse_registration_auth_data_missing_credential_test() {
+  let auth_data =
+    testing.build_authentication_authenticator_data(
+      rp_id: "example.com",
+      flags: testing.default_flags(),
+      sign_count: 0,
+    )
+
+  let assert Error(glasslock.ParseError(
+    "No attested credential in registration",
+  )) = internal.parse_registration_auth_data(auth_data)
+}
+
+pub fn cose_key_roundtrip_es256_test() {
+  let keypair = testing.generate_es256_keypair()
+  let cose_bytes = testing.cose_key(keypair)
+  let assert Ok(_key) = internal.parse_public_key(cose_bytes)
+  assert glasslock.PublicKey(cose_bytes) == testing.public_key(keypair)
+}
+
+pub fn cose_key_roundtrip_ed25519_test() {
+  let keypair = testing.generate_ed25519_keypair()
+  let cose_bytes = testing.cose_key(keypair)
+  let assert Ok(_key) = internal.parse_public_key(cose_bytes)
+  assert glasslock.PublicKey(cose_bytes) == testing.public_key(keypair)
+}
+
+pub fn cose_key_roundtrip_rs256_test() {
+  let keypair = testing.generate_rs256_keypair()
+  let cose_bytes = testing.cose_key(keypair)
+  let assert Ok(_key) = internal.parse_public_key(cose_bytes)
+  assert glasslock.PublicKey(cose_bytes) == testing.public_key(keypair)
+}
+
+pub fn parse_public_key_rejects_invalid_cbor_test() {
+  let assert Error(glasslock.ParseError(_)) =
+    internal.parse_public_key(<<0xFF, 0xFF, 0xFF>>)
+}
+
+pub fn parse_public_key_rejects_non_map_cbor_test() {
+  let cbor_bytes = cbor.encode(cbor.String("not a map"))
+  let assert Error(glasslock.ParseError(_)) =
+    internal.parse_public_key(cbor_bytes)
+}
+
+pub fn parse_public_key_rejects_unsupported_key_type_test() {
+  let cose_map =
+    cbor.Map([
+      #(cbor.Int(1), cbor.Int(99)),
+      #(cbor.Int(3), cbor.Int(-7)),
+      #(cbor.Int(-1), cbor.Int(1)),
+      #(cbor.Int(-2), cbor.Bytes(<<0:256>>)),
+      #(cbor.Int(-3), cbor.Bytes(<<0:256>>)),
+    ])
+  let cbor_bytes = cbor.encode(cose_map)
+  let assert Error(glasslock.ParseError(_)) =
+    internal.parse_public_key(cbor_bytes)
+}
+
+pub fn parse_public_key_rejects_unsupported_curve_test() {
+  let cose_map =
+    cbor.Map([
+      #(cbor.Int(1), cbor.Int(2)),
+      #(cbor.Int(3), cbor.Int(-7)),
+      #(cbor.Int(-1), cbor.Int(99)),
+      #(cbor.Int(-2), cbor.Bytes(<<0:256>>)),
+      #(cbor.Int(-3), cbor.Bytes(<<0:256>>)),
+    ])
+  let cbor_bytes = cbor.encode(cose_map)
+  let assert Error(glasslock.ParseError(_)) =
+    internal.parse_public_key(cbor_bytes)
+}
+
+pub fn parse_public_key_rejects_invalid_coordinates_test() {
+  let cose_map =
+    cbor.Map([
+      #(cbor.Int(1), cbor.Int(2)),
+      #(cbor.Int(3), cbor.Int(-7)),
+      #(cbor.Int(-1), cbor.Int(1)),
+      #(cbor.Int(-2), cbor.Bytes(<<0:128>>)),
+      #(cbor.Int(-3), cbor.Bytes(<<0:256>>)),
+    ])
+  let cbor_bytes = cbor.encode(cose_map)
+  let assert Error(glasslock.ParseError(_)) =
+    internal.parse_public_key(cbor_bytes)
+}
+
+pub fn parse_public_key_rejects_missing_alg_test() {
+  let cose_map =
+    cbor.Map([
+      #(cbor.Int(1), cbor.Int(4)),
+      #(cbor.Int(-1), cbor.Bytes(<<0:256>>)),
+    ])
+  let cbor_bytes = cbor.encode(cose_map)
+  let assert Error(glasslock.UnsupportedKey(
+    "COSE key missing algorithm (label 3)",
+  )) = internal.parse_public_key(cbor_bytes)
+}
+
+pub fn parse_attestation_format_rejects_unsupported_test() {
+  let assert Error(glasslock.InvalidAttestation("unsupported format: packed")) =
+    internal.parse_attestation_format("packed")
+}
+
+pub fn parse_authentication_auth_data_ignores_extensions_test() {
+  let assert Ok(rp_id_hash) =
+    crypto.hash(hash.Sha256, bit_array.from_string("example.com"))
+  let flags_byte = 0x81
+  let auth_data =
+    bit_array.concat([
+      rp_id_hash,
+      <<flags_byte>>,
+      <<0x00, 0x00, 0x00, 0x01>>,
+      <<0xA0>>,
+    ])
+  let assert Ok(ad) = internal.parse_authentication_auth_data(auth_data)
+  assert ad.user_present == True
+  assert ad.sign_count == 1
+}
+
+pub fn parse_authentication_auth_data_rejects_trailing_bytes_test() {
+  let assert Ok(rp_id_hash) =
+    crypto.hash(hash.Sha256, bit_array.from_string("example.com"))
+  let flags_byte = 0x01
+  let auth_data =
+    bit_array.concat([
+      rp_id_hash,
+      <<flags_byte>>,
+      <<0x00, 0x00, 0x00, 0x01>>,
+      <<0xDE, 0xAD>>,
+    ])
+  let assert Error(glasslock.ParseError(
+    "Unexpected trailing bytes in authenticator data",
+  )) = internal.parse_authentication_auth_data(auth_data)
+}
+
+pub fn parse_registration_auth_data_ignores_extensions_test() {
+  let keypair = testing.generate_es256_keypair()
+  let cose_key = testing.cose_key(keypair)
+  let credential_id = glasslock.CredentialId(<<1, 2, 3, 4>>)
+
+  let assert Ok(rp_id_hash) =
+    crypto.hash(hash.Sha256, bit_array.from_string("example.com"))
+  let flags_byte = 0xC1
+  let aaguid = <<0:128>>
+  let glasslock.CredentialId(raw_cred_id) = credential_id
+  let cred_id_len = bit_array.byte_size(raw_cred_id)
+  let extension_data = <<0xA0>>
+  let auth_data =
+    bit_array.concat([
+      rp_id_hash,
+      <<flags_byte>>,
+      <<0x00, 0x00, 0x00, 0x00>>,
+      aaguid,
+      <<cred_id_len:size(16)>>,
+      raw_cred_id,
+      cose_key,
+      extension_data,
+    ])
+
+  let assert Ok(ad) = internal.parse_registration_auth_data(auth_data)
+  assert ad.user_present == True
+  assert ad.sign_count == 0
+  assert ad.attested_credential.credential_id == raw_cred_id
+
+  let assert Ok(_) =
+    internal.parse_public_key(ad.attested_credential.public_key_cbor)
+}
+
+pub fn sign_count_monotonicity_test() {
+  test_config()
+  |> qcheck.run(
+    qcheck.tuple2(
+      qcheck.bounded_int(1, 1_000_000),
+      qcheck.bounded_int(1, 1_000_000),
+    ),
+    fn(inputs) {
+      let #(stored, new) = inputs
+      let keypair = testing.generate_es256_keypair()
+      let credential_id = crypto.random_bytes(16)
+      let public_key = testing.public_key(keypair)
+      let stored_cred =
+        glasslock.Credential(
+          id: glasslock.CredentialId(credential_id),
+          public_key: public_key,
+          sign_count: stored,
+        )
+
+      let defaults = authentication.default_options()
+      let options =
+        authentication.Options(
+          ..defaults,
+          rp_id: "example.com",
+          origin: "https://example.com",
+          allow_credentials: [glasslock.CredentialId(credential_id)],
+        )
+
+      let #(_, challenge) = authentication.generate_options(options)
+      let response =
+        testing.build_authentication_response(
+          challenge: challenge,
+          keypair: keypair,
+          sign_count: new,
+        )
+      let response_json =
+        testing.to_authentication_json(
+          response,
+          credential_id: glasslock.CredentialId(credential_id),
+          user_handle: option.None,
+        )
+
+      let result =
+        authentication.verify(
+          response_json: response_json,
+          challenge: challenge,
+          stored: stored_cred,
+        )
+
+      case new > stored {
+        True -> {
+          let assert Ok(_) = result
+          Nil
+        }
+        False -> {
+          let assert Error(glasslock.SignCountRegression) = result
+          Nil
+        }
+      }
+    },
+  )
+}
+
+pub fn verify_client_data_accepts_valid_test() {
+  let challenge = <<1, 2, 3, 4>>
+  let cd =
+    internal.ClientData(
+      type_: "webauthn.create",
+      challenge: challenge,
+      origin: "https://example.com",
+      cross_origin: False,
+      top_origin: option.None,
+    )
+  let assert Ok(Nil) =
+    internal.verify_client_data(
+      client_data: cd,
+      expected_type: "webauthn.create",
+      expected_challenge: challenge,
+      expected_origin: "https://example.com",
+      allow_cross_origin: False,
+      allowed_top_origins: [],
+    )
+}
+
+pub fn verify_client_data_rejects_wrong_type_test() {
+  let challenge = <<1, 2, 3, 4>>
+  let cd =
+    internal.ClientData(
+      type_: "webauthn.get",
+      challenge: challenge,
+      origin: "https://example.com",
+      cross_origin: False,
+      top_origin: option.None,
+    )
+  let assert Error(glasslock.VerificationMismatch(glasslock.TypeField)) =
+    internal.verify_client_data(
+      client_data: cd,
+      expected_type: "webauthn.create",
+      expected_challenge: challenge,
+      expected_origin: "https://example.com",
+      allow_cross_origin: False,
+      allowed_top_origins: [],
+    )
+}
+
+pub fn verify_client_data_rejects_wrong_challenge_test() {
+  let cd =
+    internal.ClientData(
+      type_: "webauthn.create",
+      challenge: <<1, 2, 3, 4>>,
+      origin: "https://example.com",
+      cross_origin: False,
+      top_origin: option.None,
+    )
+  let assert Error(glasslock.VerificationMismatch(glasslock.ChallengeField)) =
+    internal.verify_client_data(
+      client_data: cd,
+      expected_type: "webauthn.create",
+      expected_challenge: <<9, 9, 9, 9>>,
+      expected_origin: "https://example.com",
+      allow_cross_origin: False,
+      allowed_top_origins: [],
+    )
+}
+
+pub fn verify_client_data_rejects_wrong_origin_test() {
+  let challenge = <<1, 2, 3, 4>>
+  let cd =
+    internal.ClientData(
+      type_: "webauthn.create",
+      challenge: challenge,
+      origin: "https://evil.com",
+      cross_origin: False,
+      top_origin: option.None,
+    )
+  let assert Error(glasslock.VerificationMismatch(glasslock.OriginField)) =
+    internal.verify_client_data(
+      client_data: cd,
+      expected_type: "webauthn.create",
+      expected_challenge: challenge,
+      expected_origin: "https://example.com",
+      allow_cross_origin: False,
+      allowed_top_origins: [],
+    )
+}
+
+pub fn verify_client_data_rejects_cross_origin_test() {
+  let challenge = <<1, 2, 3, 4>>
+  let cd =
+    internal.ClientData(
+      type_: "webauthn.create",
+      challenge: challenge,
+      origin: "https://example.com",
+      cross_origin: True,
+      top_origin: option.None,
+    )
+  let assert Error(glasslock.VerificationMismatch(glasslock.CrossOriginField)) =
+    internal.verify_client_data(
+      client_data: cd,
+      expected_type: "webauthn.create",
+      expected_challenge: challenge,
+      expected_origin: "https://example.com",
+      allow_cross_origin: False,
+      allowed_top_origins: [],
+    )
+}
+
+pub fn verify_client_data_allows_cross_origin_when_permitted_test() {
+  let challenge = <<1, 2, 3, 4>>
+  let cd =
+    internal.ClientData(
+      type_: "webauthn.create",
+      challenge: challenge,
+      origin: "https://example.com",
+      cross_origin: True,
+      top_origin: option.None,
+    )
+  let assert Ok(Nil) =
+    internal.verify_client_data(
+      client_data: cd,
+      expected_type: "webauthn.create",
+      expected_challenge: challenge,
+      expected_origin: "https://example.com",
+      allow_cross_origin: True,
+      allowed_top_origins: [],
+    )
+}
+
+pub fn verify_rp_id_accepts_matching_hash_test() {
+  let assert Ok(rp_id_hash) =
+    crypto.hash(hash.Sha256, bit_array.from_string("example.com"))
+  let assert Ok(Nil) = internal.verify_rp_id(rp_id_hash, "example.com")
+}
+
+pub fn verify_rp_id_rejects_mismatching_hash_test() {
+  let assert Ok(rp_id_hash) =
+    crypto.hash(hash.Sha256, bit_array.from_string("evil.com"))
+  let assert Error(glasslock.VerificationMismatch(glasslock.RpIdField)) =
+    internal.verify_rp_id(rp_id_hash, "example.com")
+}
+
+pub fn verify_user_policies_required_present_test() {
+  let assert Ok(Nil) =
+    internal.verify_user_policies(
+      True,
+      True,
+      glasslock.PresenceRequired,
+      glasslock.VerificationRequired,
+    )
+}
+
+pub fn verify_user_policies_required_not_present_test() {
+  let assert Error(glasslock.UserVerificationFailed) =
+    internal.verify_user_policies(
+      True,
+      False,
+      glasslock.PresenceRequired,
+      glasslock.VerificationRequired,
+    )
+}
+
+pub fn verify_user_policies_preferred_always_passes_test() {
+  let assert Ok(Nil) =
+    internal.verify_user_policies(
+      True,
+      False,
+      glasslock.PresencePreferred,
+      glasslock.VerificationPreferred,
+    )
+}
+
+pub fn verify_user_policies_discouraged_always_passes_test() {
+  let assert Ok(Nil) =
+    internal.verify_user_policies(
+      True,
+      False,
+      glasslock.PresenceDiscouraged,
+      glasslock.VerificationDiscouraged,
+    )
+}
+
+pub fn verify_user_policies_presence_required_not_present_test() {
+  let assert Error(glasslock.UserPresenceFailed) =
+    internal.verify_user_policies(
+      False,
+      False,
+      glasslock.PresenceRequired,
+      glasslock.VerificationDiscouraged,
+    )
+}
+
+pub fn parse_public_key_rejects_missing_kty_test() {
+  let cose_map =
+    cbor.Map([
+      #(cbor.Int(3), cbor.Int(-7)),
+      #(cbor.Int(-1), cbor.Int(1)),
+      #(cbor.Int(-2), cbor.Bytes(<<0:256>>)),
+      #(cbor.Int(-3), cbor.Bytes(<<0:256>>)),
+    ])
+  let cbor_bytes = cbor.encode(cose_map)
+  let assert Error(glasslock.ParseError(_)) =
+    internal.parse_public_key(cbor_bytes)
+}
+
+pub fn parse_public_key_rejects_missing_x_test() {
+  let cose_map =
+    cbor.Map([
+      #(cbor.Int(1), cbor.Int(2)),
+      #(cbor.Int(3), cbor.Int(-7)),
+      #(cbor.Int(-1), cbor.Int(1)),
+      #(cbor.Int(-3), cbor.Bytes(<<0:256>>)),
+    ])
+  let cbor_bytes = cbor.encode(cose_map)
+  let assert Error(glasslock.ParseError(_)) =
+    internal.parse_public_key(cbor_bytes)
+}
+
+pub fn parse_public_key_rejects_missing_y_test() {
+  let cose_map =
+    cbor.Map([
+      #(cbor.Int(1), cbor.Int(2)),
+      #(cbor.Int(3), cbor.Int(-7)),
+      #(cbor.Int(-1), cbor.Int(1)),
+      #(cbor.Int(-2), cbor.Bytes(<<0:256>>)),
+    ])
+  let cbor_bytes = cbor.encode(cose_map)
+  let assert Error(glasslock.ParseError(_)) =
+    internal.parse_public_key(cbor_bytes)
+}
+
+pub fn parse_public_key_rejects_non_integer_kty_test() {
+  let cose_map =
+    cbor.Map([
+      #(cbor.Int(1), cbor.String("EC")),
+      #(cbor.Int(3), cbor.Int(-7)),
+      #(cbor.Int(-1), cbor.Int(1)),
+      #(cbor.Int(-2), cbor.Bytes(<<0:256>>)),
+      #(cbor.Int(-3), cbor.Bytes(<<0:256>>)),
+    ])
+  let cbor_bytes = cbor.encode(cose_map)
+  let assert Error(glasslock.ParseError(_)) =
+    internal.parse_public_key(cbor_bytes)
+}
+
+pub fn parse_public_key_rejects_non_bytes_x_test() {
+  let cose_map =
+    cbor.Map([
+      #(cbor.Int(1), cbor.Int(2)),
+      #(cbor.Int(3), cbor.Int(-7)),
+      #(cbor.Int(-1), cbor.Int(1)),
+      #(cbor.Int(-2), cbor.Int(42)),
+      #(cbor.Int(-3), cbor.Bytes(<<0:256>>)),
+    ])
+  let cbor_bytes = cbor.encode(cose_map)
+  let assert Error(glasslock.ParseError(_)) =
+    internal.parse_public_key(cbor_bytes)
+}
+
+pub fn parse_authentication_auth_data_rejects_truncated_data_test() {
+  let truncated = <<0x00, 0x01, 0x02, 0x03, 0x04, 0x05>>
+  let assert Error(glasslock.ParseError("Authenticator data too short")) =
+    internal.parse_authentication_auth_data(truncated)
+}
+
+pub fn parse_registration_auth_data_rejects_truncated_data_test() {
+  let truncated = <<0x00, 0x01, 0x02, 0x03, 0x04, 0x05>>
+  let assert Error(glasslock.ParseError("Authenticator data too short")) =
+    internal.parse_registration_auth_data(truncated)
+}
+
+pub fn parse_registration_auth_data_rejects_truncated_credential_test() {
+  let assert Ok(rp_id_hash) =
+    crypto.hash(hash.Sha256, bit_array.from_string("example.com"))
+  let flags_byte = 0x41
+  let auth_data =
+    bit_array.concat([
+      rp_id_hash,
+      <<flags_byte>>,
+      <<0x00, 0x00, 0x00, 0x00>>,
+      <<0x00, 0x00>>,
+    ])
+  let assert Error(glasslock.ParseError("Missing attested credential data")) =
+    internal.parse_registration_auth_data(auth_data)
+}
+
+pub fn verify_attestation_rejects_non_empty_statement_test() {
+  let non_empty = cbor.Map([#(cbor.String("alg"), cbor.Int(-7))])
+  let assert Error(glasslock.InvalidAttestation(
+    "none attestation with non-empty statement",
+  )) = internal.verify_attestation(internal.FormatNone, non_empty)
+}
+
+pub fn extract_attestation_fields_rejects_non_map_test() {
+  let assert Error(glasslock.ParseError("Attestation object must be a map")) =
+    internal.extract_attestation_fields(cbor.String("not a map"))
+}
+
+pub fn extract_attestation_fields_rejects_missing_auth_data_test() {
+  let cbor =
+    cbor.Map([
+      #(cbor.String("fmt"), cbor.String("none")),
+      #(cbor.String("attStmt"), cbor.Map([])),
+    ])
+  let assert Error(glasslock.ParseError("Missing field: authData")) =
+    internal.extract_attestation_fields(cbor)
+}
+
+pub fn extract_attestation_fields_rejects_missing_fmt_test() {
+  let cbor =
+    cbor.Map([
+      #(cbor.String("authData"), cbor.Bytes(<<0x00>>)),
+      #(cbor.String("attStmt"), cbor.Map([])),
+    ])
+  let assert Error(glasslock.ParseError("Missing field: fmt")) =
+    internal.extract_attestation_fields(cbor)
+}
+
+pub fn parse_attestation_object_rejects_invalid_cbor_test() {
+  let assert Error(glasslock.ParseError("Unsupported CBOR additional info: 31")) =
+    internal.parse_attestation_object(<<0xFF, 0xFF, 0xFF>>)
+}
+
+pub fn parse_client_data_with_missing_cross_origin_defaults_false_test() {
+  let challenge = <<1, 2, 3, 4>>
+  let challenge_b64 = bit_array.base64_url_encode(challenge, False)
+  let client_data =
+    json.object([
+      #("type", json.string("webauthn.get")),
+      #("challenge", json.string(challenge_b64)),
+      #("origin", json.string("https://example.com")),
+    ])
+    |> json.to_string
+    |> bit_array.from_string
+
+  let assert Ok(cd) = internal.parse_client_data(client_data)
+  assert cd.cross_origin == False
+  assert cd.top_origin == option.None
+}
+
+pub fn decode_base64url_rejects_invalid_encoding_test() {
+  let assert Error(glasslock.ParseError("Invalid base64url in testField")) =
+    internal.decode_base64url("!!!invalid!!!", "testField")
+}
+
+pub fn decode_optional_base64url_returns_none_for_none_test() {
+  let assert Ok(option.None) =
+    internal.decode_optional_base64url(option.None, "testField")
+}
+
+pub fn decode_optional_base64url_decodes_some_test() {
+  let encoded = bit_array.base64_url_encode(<<1, 2, 3>>, False)
+  let assert Ok(option.Some(<<1, 2, 3>>)) =
+    internal.decode_optional_base64url(option.Some(encoded), "testField")
+}
+
+pub fn decode_optional_base64url_rejects_invalid_encoding_test() {
+  let assert Error(glasslock.ParseError("Invalid base64url in testField")) =
+    internal.decode_optional_base64url(
+      option.Some("!!!invalid!!!"),
+      "testField",
+    )
+}
+
+pub fn user_verification_to_string_test() {
+  assert internal.user_verification_to_string(glasslock.VerificationRequired)
+    == "required"
+  assert internal.user_verification_to_string(glasslock.VerificationPreferred)
+    == "preferred"
+  assert internal.user_verification_to_string(glasslock.VerificationDiscouraged)
+    == "discouraged"
+}
+
+pub fn parse_client_data_with_top_origin_test() {
+  let challenge = <<1, 2, 3, 4>>
+  let client_data =
+    testing.build_client_data(
+      type_: "webauthn.get",
+      challenge:,
+      origin: "https://sub.example.com",
+      cross_origin: True,
+      top_origin: option.Some("https://example.com"),
+    )
+
+  let assert Ok(cd) = internal.parse_client_data(client_data)
+  assert cd.cross_origin == True
+  assert cd.top_origin == option.Some("https://example.com")
+}
+
+pub fn parse_client_data_without_top_origin_defaults_none_test() {
+  let challenge = <<1, 2, 3, 4>>
+  let client_data =
+    testing.build_client_data_get(
+      challenge: challenge,
+      origin: "https://example.com",
+      cross_origin: False,
+    )
+
+  let assert Ok(cd) = internal.parse_client_data(client_data)
+  assert cd.top_origin == option.None
+}
+
+pub fn verify_client_data_accepts_allowed_top_origin_test() {
+  let challenge = <<1, 2, 3, 4>>
+  let cd =
+    internal.ClientData(
+      type_: "webauthn.create",
+      challenge: challenge,
+      origin: "https://sub.example.com",
+      cross_origin: True,
+      top_origin: option.Some("https://example.com"),
+    )
+  let assert Ok(Nil) =
+    internal.verify_client_data(
+      client_data: cd,
+      expected_type: "webauthn.create",
+      expected_challenge: challenge,
+      expected_origin: "https://sub.example.com",
+      allow_cross_origin: True,
+      allowed_top_origins: ["https://example.com"],
+    )
+}
+
+pub fn verify_client_data_rejects_unknown_top_origin_test() {
+  let challenge = <<1, 2, 3, 4>>
+  let cd =
+    internal.ClientData(
+      type_: "webauthn.create",
+      challenge: challenge,
+      origin: "https://sub.example.com",
+      cross_origin: True,
+      top_origin: option.Some("https://evil.com"),
+    )
+  let assert Error(glasslock.VerificationMismatch(glasslock.TopOriginField)) =
+    internal.verify_client_data(
+      client_data: cd,
+      expected_type: "webauthn.create",
+      expected_challenge: challenge,
+      expected_origin: "https://sub.example.com",
+      allow_cross_origin: True,
+      allowed_top_origins: ["https://example.com"],
+    )
+}
+
+pub fn verify_client_data_rejects_missing_top_origin_with_allowlist_test() {
+  let challenge = <<1, 2, 3, 4>>
+  let cd =
+    internal.ClientData(
+      type_: "webauthn.create",
+      challenge: challenge,
+      origin: "https://sub.example.com",
+      cross_origin: True,
+      top_origin: option.None,
+    )
+  let assert Error(glasslock.VerificationMismatch(glasslock.TopOriginField)) =
+    internal.verify_client_data(
+      client_data: cd,
+      expected_type: "webauthn.create",
+      expected_challenge: challenge,
+      expected_origin: "https://sub.example.com",
+      allow_cross_origin: True,
+      allowed_top_origins: ["https://example.com"],
+    )
+}
+
+pub fn verify_client_data_rejects_top_origin_with_empty_allowlist_test() {
+  let challenge = <<1, 2, 3, 4>>
+  let cd =
+    internal.ClientData(
+      type_: "webauthn.create",
+      challenge: challenge,
+      origin: "https://sub.example.com",
+      cross_origin: True,
+      top_origin: option.Some("https://example.com"),
+    )
+  let assert Error(glasslock.VerificationMismatch(glasslock.TopOriginField)) =
+    internal.verify_client_data(
+      client_data: cd,
+      expected_type: "webauthn.create",
+      expected_challenge: challenge,
+      expected_origin: "https://sub.example.com",
+      allow_cross_origin: True,
+      allowed_top_origins: [],
+    )
+}
