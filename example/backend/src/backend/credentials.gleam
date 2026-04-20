@@ -8,11 +8,6 @@ import gleam/string
 import trove
 import trove/codec
 
-pub type Error {
-  StorageError(String)
-  NotFound
-}
-
 pub type Store {
   Store(
     db: trove.Db(String, String),
@@ -75,15 +70,21 @@ pub fn close(store: Store) -> Nil {
   trove.close(store.db)
 }
 
-pub fn get_user(store: Store, username: String) -> Result(User, Error) {
+fn user_key(username: String) -> String {
+  username
+  |> bit_array.from_string
+  |> bit_array.base64_url_encode(False)
+}
+
+pub fn get_user(store: Store, username: String) -> Result(User, Nil) {
   trove.get_in(store.db, keyspace: store.users, key: username)
-  |> result.replace_error(NotFound)
+  |> result.replace_error(Nil)
 }
 
 pub fn get_user_by_credential_id(
   store: Store,
   credential_id: BitArray,
-) -> Result(User, Error) {
+) -> Result(User, Nil) {
   case
     trove.get_in(
       store.db,
@@ -92,14 +93,11 @@ pub fn get_user_by_credential_id(
     )
   {
     Ok(username) -> get_user(store, username)
-    Error(_) -> Error(NotFound)
+    Error(_) -> Error(Nil)
   }
 }
 
-pub fn get_user_by_user_id(
-  store: Store,
-  user_id: BitArray,
-) -> Result(User, Error) {
+pub fn get_user_by_user_id(store: Store, user_id: BitArray) -> Result(User, Nil) {
   case
     trove.get_in(
       store.db,
@@ -108,7 +106,7 @@ pub fn get_user_by_user_id(
     )
   {
     Ok(username) -> get_user(store, username)
-    Error(_) -> Error(NotFound)
+    Error(_) -> Error(Nil)
   }
 }
 
@@ -145,13 +143,7 @@ pub fn save(
   })
 }
 
-pub fn update(
-  store: Store,
-  credential: glasslock.Credential,
-) -> Result(Nil, Error) {
-  let glasslock.CredentialId(raw_id) = credential.id
-  use user <- result.try(get_user_by_credential_id(store, raw_id))
-
+pub fn update(store: Store, user: User, credential: glasslock.Credential) -> Nil {
   let updated_user =
     User(..user, credentials: replace_credential(user.credentials, credential))
   trove.put_in(
@@ -160,7 +152,6 @@ pub fn update(
     key: user.username,
     value: updated_user,
   )
-  Ok(Nil)
 }
 
 fn replace_credential(

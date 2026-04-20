@@ -1,10 +1,7 @@
 import backend/credentials
-import backend/sessions
 import backend/web
 import glasslock
 import glasslock/authentication
-import gleam/bit_array
-import gleam/crypto
 import gleam/dynamic/decode
 import gleam/json
 import gleam/list
@@ -12,43 +9,32 @@ import gleam/option
 import gleam/result
 import wisp
 
-pub fn begin(ctx: web.Context) -> wisp.Response {
-  let options =
-    authentication.Options(
-      ..authentication.default_options(),
-      rp_id: ctx.rp_id,
+const session_cookie = "authentication"
+
+const session_max_age = 300
+
+pub fn begin(req: wisp.Request, ctx: web.Context) -> wisp.Response {
+  let #(options_json, challenge) =
+    authentication.request(
+      relying_party_id: ctx.rp_id,
       origins: ctx.origins,
-      allow_credentials: [],
+      options: authentication.default_options(),
     )
-  let #(options_json, challenge) = authentication.generate_options(options)
 
-  let session_id =
-    crypto.strong_random_bytes(32)
-    |> bit_array.base64_url_encode(False)
+  let encoded = authentication.encode_challenge(challenge)
 
-  sessions.set_authentication(
-    ctx.sessions,
-    session_id,
-    sessions.Authentication(challenge:),
-  )
-
-  let response_json =
-    json.object([
-      #("session_id", json.string(session_id)),
-      #("options", options_json),
-    ])
-    |> json.to_string
-
-  wisp.json_response(response_json, 200)
+  json.object([#("options", options_json)])
+  |> json.to_string
+  |> wisp.json_response(200)
+  |> wisp.set_cookie(req, session_cookie, encoded, wisp.Signed, session_max_age)
 }
 
 pub fn complete(req: wisp.Request, ctx: web.Context) -> wisp.Response {
   use body <- wisp.require_string_body(req)
 
   let decoder = {
-    use session_id <- decode.field("session_id", decode.string)
     use response <- decode.field("response", decode.string)
-    decode.success(#(session_id, response))
+    decode.success(response)
   }
 
   case json.parse(body, decoder) {
@@ -56,19 +42,22 @@ pub fn complete(req: wisp.Request, ctx: web.Context) -> wisp.Response {
       json.object([#("error", json.string("invalid json"))])
       |> json.to_string
       |> wisp.json_response(400)
-    Ok(#(session_id, response)) ->
-      complete_authentication(session_id, response, ctx)
+    Ok(response) -> complete_authentication(req, response, ctx)
   }
 }
 
 fn complete_authentication(
-  session_id: String,
+  req: wisp.Request,
   response_json: String,
   ctx: web.Context,
 ) -> wisp.Response {
   let result = {
-    use session <- result.try(
-      sessions.get_and_delete_authentication(ctx.sessions, session_id)
+    use encoded <- result.try(
+      wisp.get_cookie(req, session_cookie, wisp.Signed)
+      |> result.map_error(fn(_) { #("session not found", 400) }),
+    )
+    use challenge <- result.try(
+      authentication.parse_challenge(encoded:)
       |> result.map_error(fn(_) { #("session not found", 400) }),
     )
     use info <- result.try(
@@ -86,16 +75,15 @@ fn complete_authentication(
     use updated_credential <- result.try(
       authentication.verify(
         response_json: response_json,
-        challenge: session.challenge,
+        challenge:,
         stored: stored_credential,
       )
       |> result.map_error(fn(err) {
         #("verification failed: " <> describe_error(err), 400)
       }),
     )
-    credentials.update(ctx.credentials, updated_credential)
-    |> result.map(fn(_) { user.username })
-    |> result.map_error(fn(_) { #("failed to update credential", 500) })
+    credentials.update(ctx.credentials, user, updated_credential)
+    Ok(user.username)
   }
 
   case result {
@@ -106,11 +94,17 @@ fn complete_authentication(
       ])
       |> json.to_string
       |> wisp.json_response(200)
+      |> clear_session(req)
     Error(#(message, status)) ->
       json.object([#("error", json.string(message))])
       |> json.to_string
       |> wisp.json_response(status)
+      |> clear_session(req)
   }
+}
+
+fn clear_session(response: wisp.Response, req: wisp.Request) -> wisp.Response {
+  wisp.set_cookie(response, req, session_cookie, "", wisp.PlainText, 0)
 }
 
 fn describe_error(err: glasslock.Error) -> String {
@@ -119,7 +113,8 @@ fn describe_error(err: glasslock.Error) -> String {
     glasslock.VerificationMismatch(glasslock.ChallengeField) ->
       "challenge mismatch"
     glasslock.VerificationMismatch(glasslock.OriginField) -> "origin mismatch"
-    glasslock.VerificationMismatch(glasslock.RpIdField) -> "rp id mismatch"
+    glasslock.VerificationMismatch(glasslock.RelyingPartyIdField) ->
+      "relying party id mismatch"
     glasslock.VerificationMismatch(glasslock.CrossOriginField) ->
       "cross origin not allowed"
     glasslock.VerificationMismatch(glasslock.TopOriginField) ->
@@ -129,7 +124,6 @@ fn describe_error(err: glasslock.Error) -> String {
     glasslock.VerificationMismatch(glasslock.CredentialTypeField) ->
       "credential type mismatch"
     glasslock.UnsupportedKey(reason) -> "unsupported key: " <> reason
-    glasslock.UnsupportedFeature(reason) -> "unsupported feature: " <> reason
     glasslock.ParseError(message) -> "parse error: " <> message
     glasslock.InvalidAttestation(reason) -> "invalid attestation: " <> reason
     glasslock.InvalidSignature -> "invalid signature"
@@ -143,7 +137,7 @@ fn describe_error(err: glasslock.Error) -> String {
 fn lookup_user(
   ctx: web.Context,
   info: authentication.ResponseInfo,
-) -> Result(credentials.User, credentials.Error) {
+) -> Result(credentials.User, Nil) {
   let glasslock.CredentialId(credential_id) = info.credential_id
   case credentials.get_user_by_credential_id(ctx.credentials, credential_id) {
     Ok(user) -> Ok(user)
@@ -151,7 +145,7 @@ fn lookup_user(
       case info.user_handle {
         option.Some(user_handle) ->
           credentials.get_user_by_user_id(ctx.credentials, user_handle)
-        option.None -> Error(credentials.NotFound)
+        option.None -> Error(Nil)
       }
   }
 }

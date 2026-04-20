@@ -12,6 +12,7 @@ gleam_json = ">= 3.1.0 and < 4.0.0"
 gleam_stdlib = ">= 0.67.1 and < 2.0.0"
 gose = ">= 2.1.0 and < 3.0.0"
 kryptos = ">= 1.0.0 and < 2.0.0"
+gleam_time = ">= 1.8.0 and < 2.0.0"
 
 [dev-dependencies]
 qcheck = ">= 1.0.2 and < 2.0.0"

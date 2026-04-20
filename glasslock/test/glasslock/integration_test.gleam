@@ -28,17 +28,18 @@ fn register_then_authenticate(
   algorithm: registration.Algorithm,
   keypair: testing.KeyPair,
 ) -> Nil {
-  let rp = registration.Rp(id: "example.com", name: "Test App")
+  let relying_party =
+    registration.RelyingParty(id: "example.com", name: "Test App")
   let user =
     registration.User(id: <<1, 2, 3, 4>>, name: "test", display_name: "Test")
 
   let #(_, reg_challenge) =
-    registration.generate_options(
-      registration.Options(
+    registration.request(
+      relying_party:,
+      user:,
+      origins: ["https://example.com"],
+      options: registration.Options(
         ..registration.default_options(),
-        rp:,
-        user:,
-        origins: ["https://example.com"],
         algorithms: [algorithm],
       ),
     )
@@ -56,11 +57,11 @@ fn register_then_authenticate(
   assert credential.sign_count == 0
 
   let #(_, auth_challenge) =
-    authentication.generate_options(
-      authentication.Options(
+    authentication.request(
+      relying_party_id: "example.com",
+      origins: ["https://example.com"],
+      options: authentication.Options(
         ..authentication.default_options(),
-        rp_id: "example.com",
-        origins: ["https://example.com"],
         allow_credentials: [credential.id],
       ),
     )

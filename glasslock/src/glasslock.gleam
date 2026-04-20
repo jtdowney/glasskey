@@ -13,15 +13,21 @@
 //// ```gleam
 //// import glasslock/registration
 ////
-//// // 1. Generate options for browser
-//// let #(options_json, challenge) = registration.generate_options(options)
+//// let #(request_json, challenge) =
+////   registration.request(
+////     relying_party: registration.RelyingParty(id: "example.com", name: "My App"),
+////     user: registration.User(id: user_id, name: username, display_name: username),
+////     origins: ["https://example.com"],
+////     options: registration.default_options(),
+////   )
 ////
-//// // 2. Send options_json to browser
-//// // Browser: const resp = await startRegistration({ optionsJSON: JSON.parse(options_json) })
+//// // Send request_json to browser. Keep `challenge` in memory for a
+//// // single-node deploy; to span processes or nodes, serialize with
+//// // `registration.encode_challenge` and recover with
+//// // `registration.parse_challenge`.
 ////
-//// // 3. Verify the browser's response
 //// case registration.verify(response_json:, challenge:) {
-////   Ok(credential) -> // Store credential
+////   Ok(credential) -> // Store credential.id, credential.public_key, sign_count
 ////   Error(e) -> // Handle error
 //// }
 //// ```
@@ -31,13 +37,18 @@
 //// ```gleam
 //// import glasslock/authentication
 ////
-//// // 1. Generate options for browser
-//// let #(options_json, challenge) = authentication.generate_options(options)
+//// let #(request_json, challenge) =
+////   authentication.request(
+////     relying_party_id: "example.com",
+////     origins: ["https://example.com"],
+////     options: authentication.default_options(),
+////   )
 ////
-//// // 2. Send options_json to browser
-//// // Browser: const resp = await startAuthentication({ optionsJSON: JSON.parse(options_json) })
+//// // Send request_json to browser. Keep `challenge` in memory for a
+//// // single-node deploy; to span processes or nodes, serialize with
+//// // `authentication.encode_challenge` and recover with
+//// // `authentication.parse_challenge`.
 ////
-//// // 3. Verify the browser's response
 //// case authentication.verify(response_json:, challenge:, stored: stored_credential) {
 ////   Ok(updated_credential) -> // Update stored sign_count
 ////   Error(e) -> // Handle error
@@ -90,8 +101,8 @@ pub type VerificationField {
   ChallengeField
   /// The `origin` field in clientDataJSON did not match the expected origin.
   OriginField
-  /// The SHA-256 hash of the relying party ID did not match authenticator data.
-  RpIdField
+  /// The SHA-256 hash of the Relying Party ID did not match authenticator data.
+  RelyingPartyIdField
   /// The `crossOrigin` field was `true` but cross-origin requests are not allowed.
   CrossOriginField
   /// The `topOrigin` field did not match any allowed top-level origin.
@@ -108,8 +119,6 @@ pub type Error {
   VerificationMismatch(field: VerificationField)
   /// The key format, algorithm, or curve is not supported.
   UnsupportedKey(reason: String)
-  /// A feature (e.g., extensions) is not supported.
-  UnsupportedFeature(reason: String)
   /// Failed to parse data (CBOR, JSON, or authenticator data).
   ParseError(message: String)
   /// The attestation format or statement is invalid.
