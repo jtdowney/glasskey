@@ -1,0 +1,181 @@
+//// Credential store backed by trove.
+
+import glasslock
+import gleam/bit_array
+import gleam/list
+import gleam/result
+import gleam/string
+import trove
+import trove/codec
+
+pub type Error {
+  StorageError(String)
+  NotFound
+}
+
+pub type Store {
+  Store(
+    db: trove.Db(String, String),
+    users: trove.Keyspace(String, User),
+    credential_index: trove.Keyspace(String, String),
+    user_id_index: trove.Keyspace(String, String),
+  )
+}
+
+pub type User {
+  User(
+    username: String,
+    user_id: BitArray,
+    credentials: List(glasslock.Credential),
+  )
+}
+
+const transaction_timeout = 5000
+
+pub fn open(storage_path: String) -> Result(Store, trove.OpenError) {
+  let config =
+    trove.Config(
+      path: storage_path,
+      key_codec: codec.string(),
+      value_codec: codec.string(),
+      key_compare: string.compare,
+      auto_compact: trove.AutoCompact(min_dirt: 1000, min_dirt_factor: 0.25),
+      auto_file_sync: trove.AutoSync,
+      call_timeout: 5000,
+    )
+  use db <- result.try(trove.open(config))
+  let users =
+    trove.keyspace(
+      db,
+      name: "users",
+      key_codec: codec.string(),
+      value_codec: term_codec(),
+      key_compare: string.compare,
+    )
+  let credential_index =
+    trove.keyspace(
+      db,
+      name: "credential_index",
+      key_codec: codec.string(),
+      value_codec: codec.string(),
+      key_compare: string.compare,
+    )
+  let user_id_index =
+    trove.keyspace(
+      db,
+      name: "user_id_index",
+      key_codec: codec.string(),
+      value_codec: codec.string(),
+      key_compare: string.compare,
+    )
+  Ok(Store(db:, users:, credential_index:, user_id_index:))
+}
+
+pub fn close(store: Store) -> Nil {
+  trove.close(store.db)
+}
+
+pub fn get_user(store: Store, username: String) -> Result(User, Error) {
+  trove.get_in(store.db, keyspace: store.users, key: username)
+  |> result.replace_error(NotFound)
+}
+
+pub fn get_user_by_credential_id(
+  store: Store,
+  credential_id: BitArray,
+) -> Result(User, Error) {
+  case
+    trove.get_in(
+      store.db,
+      keyspace: store.credential_index,
+      key: bit_array.base64_url_encode(credential_id, False),
+    )
+  {
+    Ok(username) -> get_user(store, username)
+    Error(_) -> Error(NotFound)
+  }
+}
+
+pub fn get_user_by_user_id(
+  store: Store,
+  user_id: BitArray,
+) -> Result(User, Error) {
+  case
+    trove.get_in(
+      store.db,
+      keyspace: store.user_id_index,
+      key: bit_array.base64_url_encode(user_id, False),
+    )
+  {
+    Ok(username) -> get_user(store, username)
+    Error(_) -> Error(NotFound)
+  }
+}
+
+pub fn save(
+  store: Store,
+  username: String,
+  user_id: BitArray,
+  credential: glasslock.Credential,
+) -> Nil {
+  let glasslock.CredentialId(raw_credential_id) = credential.id
+  let cred_key = bit_array.base64_url_encode(raw_credential_id, False)
+  let uid_key = bit_array.base64_url_encode(user_id, False)
+
+  trove.transaction(store.db, timeout: transaction_timeout, callback: fn(tx) {
+    let user = case trove.tx_get_in(tx, keyspace: store.users, key: username) {
+      Ok(existing) ->
+        User(..existing, credentials: [credential, ..existing.credentials])
+      Error(_) -> User(username:, user_id:, credentials: [credential])
+    }
+    let tx =
+      tx
+      |> trove.tx_put_in(keyspace: store.users, key: username, value: user)
+      |> trove.tx_put_in(
+        keyspace: store.credential_index,
+        key: cred_key,
+        value: username,
+      )
+      |> trove.tx_put_in(
+        keyspace: store.user_id_index,
+        key: uid_key,
+        value: username,
+      )
+    trove.Commit(tx: tx, result: Nil)
+  })
+}
+
+pub fn update(
+  store: Store,
+  credential: glasslock.Credential,
+) -> Result(Nil, Error) {
+  let glasslock.CredentialId(raw_id) = credential.id
+  use user <- result.try(get_user_by_credential_id(store, raw_id))
+
+  let updated_credentials =
+    list.map(user.credentials, fn(cred) {
+      case cred.id == credential.id {
+        True -> credential
+        False -> cred
+      }
+    })
+
+  let updated_user = User(..user, credentials: updated_credentials)
+  trove.put_in(
+    store.db,
+    keyspace: store.users,
+    key: user.username,
+    value: updated_user,
+  )
+  Ok(Nil)
+}
+
+fn term_codec() -> codec.Codec(a) {
+  codec.Codec(encode: term_encode, decode: term_decode)
+}
+
+@external(erlang, "backend_ffi", "term_encode")
+fn term_encode(term: a) -> BitArray
+
+@external(erlang, "backend_ffi", "term_decode")
+fn term_decode(bits: BitArray) -> Result(a, Nil)
