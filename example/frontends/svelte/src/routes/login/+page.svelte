@@ -34,8 +34,7 @@
     };
   });
 
-  async function handleSubmit(event) {
-    event.preventDefault();
+  async function handleLogin() {
     busy = true;
     status = "Waiting for authenticator...";
     try {
@@ -54,7 +53,7 @@
 </svelte:head>
 
 <h1>Sign In</h1>
-<form onsubmit={handleSubmit}>
+<div class="stack">
   <!-- The browser attaches the WebAuthn autofill picker to this input via
        autocomplete="... webauthn"; the value is never read by our JS. -->
   <input
@@ -63,15 +62,11 @@
     placeholder="Username"
     autocomplete="username webauthn"
   />
-  <button type="submit" disabled={busy}>Sign in with passkey</button>
-</form>
+  <button type="button" disabled={busy} onclick={handleLogin}
+    >Sign in with passkey</button
+  >
+</div>
 {#if status}
   <p class="status">{status}</p>
 {/if}
 <p><a href="/">Back to home</a></p>
-
-<style>
-  .status {
-    color: #555;
-  }
-</style>
