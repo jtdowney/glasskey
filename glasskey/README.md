@@ -15,29 +15,17 @@ gleam add glasskey
 
 ## Usage
 
-The server (glasslock) returns a JSON envelope containing the `options` subtree. Decode that subtree with `registration_options_decoder()` or `authentication_options_decoder()`, then pass the parsed value to the ceremony starter.
+`registration_options_decoder()` and `authentication_options_decoder()` are `decode.Decoder` values that parse the options JSON glasslock produces. Compose them into whatever shape your server wraps them in, then pass the decoded value to the matching ceremony starter.
 
 ### Registration
 
 ```gleam
 import glasskey
-import gleam/dynamic/decode
 import gleam/javascript/promise
-
-let envelope_decoder = {
-  use session_id <- decode.field("session_id", decode.string)
-  use options <- decode.field("options", glasskey.registration_options_decoder())
-  decode.success(#(session_id, options))
-}
-
-// Decode the server envelope into (session_id, RegistrationOptions)...
-let assert Ok(#(_session_id, options)) = json.parse(envelope_json, envelope_decoder)
 
 use result <- promise.await(glasskey.start_registration(options))
 case result {
-  Ok(response_json) -> {
-    // Send response_json to server for verification
-  }
+  Ok(response_json) -> // POST response_json to server for verification
   Error(glasskey.NotSupported) -> // WebAuthn not available
   Error(glasskey.NotAllowed) -> // User cancelled
   Error(e) -> // Other error
@@ -47,15 +35,9 @@ case result {
 ### Authentication
 
 ```gleam
-import glasskey
-import gleam/javascript/promise
-
-// options parsed via glasskey.authentication_options_decoder() (same envelope pattern).
 use result <- promise.await(glasskey.start_authentication(options))
 case result {
-  Ok(response_json) -> {
-    // Send response_json to server for verification
-  }
+  Ok(response_json) -> // POST response_json to server for verification
   Error(e) -> // Handle error
 }
 ```
