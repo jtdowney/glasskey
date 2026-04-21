@@ -25,5 +25,5 @@
 {#if username}
   <h1>Welcome, {username}!</h1>
   <p>You have successfully authenticated.</p>
-  <button type="button" onclick={logout}>Log out</button>
+  <button type="button" class="button" onclick={logout}>Log out</button>
 {/if}

@@ -1,14 +1,17 @@
+import frontend/router
 import glasskey
+import gleam/uri.{type Uri}
 
 pub type Model {
-  Model(page: Page, username: String, status: String)
+  Unauthenticated(page: UnauthenticatedPage, status: String)
+  Authenticating(username: String, stage: RegisterStage, status: String)
+  Authenticated(username: String, status: String)
 }
 
-pub type Page {
+pub type UnauthenticatedPage {
   HomePage
-  RegisterPage(stage: RegisterStage)
   LoginPage(stage: LoginStage)
-  WelcomePage(username: String)
+  NotFoundPage(uri: Uri)
 }
 
 pub type RegisterStage {
@@ -27,23 +30,17 @@ pub type LoginStage {
   LoginReady
 }
 
-pub type Destination {
-  DestHome
-  DestRegister
-  DestLogin
-}
-
 pub type Msg {
-  NavigateTo(Destination)
-  UsernameChanged(String)
-  RegisterClicked
-  GotRegisterBeginResponse(Result(glasskey.RegistrationOptions, String))
-  GotWebAuthnRegistrationResult(Result(String, glasskey.Error))
-  GotRegisterCompleteResponse(Result(Nil, String))
-  LoginClicked
-  GotLoginBeginResponse(Result(glasskey.AuthenticationOptions, String))
-  GotModalLoginBeginResponse(Result(glasskey.AuthenticationOptions, String))
-  GotWebAuthnAuthenticationResult(Result(String, glasskey.Error))
-  GotConditionalAuthenticationResult(Result(String, glasskey.Error))
-  GotLoginCompleteResponse(Result(String, String))
+  UserNavigatedTo(router.Route)
+  UserTypedUsername(String)
+  UserClickedRegister
+  UserClickedLogin
+  BackendBeganRegistration(Result(glasskey.RegistrationOptions, String))
+  AuthenticatorFinishedRegistration(Result(String, glasskey.Error))
+  BackendFinishedRegistration(Result(Nil, String))
+  BackendBeganLogin(Result(glasskey.AuthenticationOptions, String))
+  BackendBeganModalLogin(Result(glasskey.AuthenticationOptions, String))
+  AuthenticatorFinishedLogin(Result(String, glasskey.Error))
+  AuthenticatorFinishedConditionalLogin(Result(String, glasskey.Error))
+  BackendFinishedLogin(Result(String, String))
 }

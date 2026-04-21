@@ -6,8 +6,7 @@
   let busy = $state(false);
   const canSubmit = $derived(username.trim() !== "" && !busy);
 
-  async function handleSubmit(event) {
-    event.preventDefault();
+  async function handleRegister() {
     if (!canSubmit) return;
     busy = true;
     status = "Starting registration...";
@@ -28,28 +27,18 @@
 </svelte:head>
 
 <h1>Register</h1>
-<form class="stack" onsubmit={handleSubmit}>
+<div class="stack">
   <input
     type="text"
     placeholder="Username"
     bind:value={username}
     disabled={busy}
   />
-  <button type="submit" disabled={!canSubmit}>Register</button>
-</form>
+  <button type="button" disabled={!canSubmit} onclick={handleRegister}
+    >Register</button
+  >
+</div>
 {#if status}
   <p class="status">{status}</p>
 {/if}
 <p><a href="/">Back to home</a></p>
-
-<style>
-  .stack {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5em;
-  }
-
-  .status {
-    color: #555;
-  }
-</style>
