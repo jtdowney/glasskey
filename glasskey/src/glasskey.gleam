@@ -8,43 +8,28 @@
 ////
 //// ## Quick Start
 ////
-//// ### Registration (creating a new credential)
+//// `registration_options_decoder()` and `authentication_options_decoder()` are
+//// `decode.Decoder` values that parse the options JSON glasslock produces.
+//// Compose them into your server's response shape, then pass the decoded
+//// value to the matching ceremony starter.
 ////
 //// ```gleam
 //// import glasskey
-//// import gleam/dynamic/decode
 //// import gleam/javascript/promise
 ////
-//// // 1. Decode the glasslock server's envelope, using `registration_options_decoder()`
-//// //    for the embedded `options` subtree.
-//// let envelope_decoder = {
-////   use session_id <- decode.field("session_id", decode.string)
-////   use options <- decode.field("options", glasskey.registration_options_decoder())
-////   decode.success(#(session_id, options))
+//// // Registration
+//// use result <- promise.await(glasskey.start_registration(options))
+//// case result {
+////   Ok(response_json) -> // POST response_json to the server to verify
+////   Error(e) -> // Handle error
 //// }
 ////
-//// // 2. Call the browser WebAuthn API with the parsed options.
-//// glasskey.start_registration(options)
-//// |> promise.map(fn(result) {
-////   case result {
-////     Ok(response_json) -> // Send response_json back to server
-////     Error(e) -> // Handle error
-////   }
-//// })
-//// ```
-////
-//// ### Authentication (verifying an existing credential)
-////
-//// Same envelope pattern, using `authentication_options_decoder()`:
-////
-//// ```gleam
-//// glasskey.start_authentication(options)
-//// |> promise.map(fn(result) {
-////   case result {
-////     Ok(response_json) -> // Send response_json back to server
-////     Error(e) -> // Handle error
-////   }
-//// })
+//// // Authentication
+//// use result <- promise.await(glasskey.start_authentication(options))
+//// case result {
+////   Ok(response_json) -> // POST response_json to the server to verify
+////   Error(e) -> // Handle error
+//// }
 //// ```
 
 import gleam/bit_array
