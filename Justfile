@@ -17,6 +17,7 @@ fmt:
     cd glasskey && gleam format src test
     cd example/backend && gleam format src
     cd example/frontends/lustre && gleam format src
+    cd example/frontends/svelte && bun run format
 
 # Download all dependencies
 deps:
@@ -52,3 +53,4 @@ update-deps:
     cd glasskey && gleam deps update
     cd example/backend && gleam deps update
     cd example/frontends/lustre && gleam deps update
+    cd example/frontends/svelte && bun update
