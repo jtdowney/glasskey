@@ -66,7 +66,7 @@ export async function createCredential(opts) {
     if (!credential) {
       return Result$Error(Error$NotAllowed());
     }
-    return Result$Ok(credential);
+    return Result$Ok(extractRegistrationFields(credential));
   } catch (error) {
     return Result$Error(classifyJsError(error));
   }
@@ -98,7 +98,7 @@ export async function getCredential(opts) {
       return Result$Error(Error$NotAllowed());
     }
 
-    return Result$Ok(credential);
+    return Result$Ok(extractAuthenticationFields(credential));
   } catch (error) {
     return Result$Error(classifyJsError(error));
   }
@@ -135,14 +135,14 @@ export function getConditionalCredential(opts) {
       if (!credential) {
         return Result$Error(Error$NotAllowed());
       }
-      return Result$Ok(credential);
+      return Result$Ok(extractAuthenticationFields(credential));
     })
     .catch((error) => Result$Error(classifyJsError(error)));
 
   return [promise, () => controller.abort()];
 }
 
-export function extractRegistrationFields(credential) {
+function extractRegistrationFields(credential) {
   return {
     id: credential.id,
     raw_id: BitArray$BitArray(new Uint8Array(credential.rawId)),
@@ -155,7 +155,7 @@ export function extractRegistrationFields(credential) {
   };
 }
 
-export function extractAuthenticationFields(credential) {
+function extractAuthenticationFields(credential) {
   const user_handle = credential.response.userHandle
     ? Option$Some(
         BitArray$BitArray(new Uint8Array(credential.response.userHandle)),
