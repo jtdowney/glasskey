@@ -201,8 +201,6 @@ type PubKeyCredParam {
   PubKeyCredParam(type_: String, alg: Int)
 }
 
-type RawCredential
-
 type Rp {
   Rp(id: String, name: String)
 }
@@ -225,11 +223,7 @@ pub fn start_authentication(
   )
 
   get_credential(options)
-  |> promise.map(
-    result.map(_, fn(c) {
-      encode_authentication_response(extract_authentication_fields(c))
-    }),
-  )
+  |> promise.map(result.map(_, encode_authentication_response))
 }
 
 /// Start a conditional WebAuthn authentication ceremony (autofill UI).
@@ -249,11 +243,7 @@ pub fn start_conditional_authentication(
   let #(raw_promise, abort) = get_conditional_credential(options)
   let result =
     raw_promise
-    |> promise.map(
-      result.map(_, fn(c) {
-        encode_authentication_response(extract_authentication_fields(c))
-      }),
-    )
+    |> promise.map(result.map(_, encode_authentication_response))
 
   Ok(ConditionalAuthentication(result:, abort:))
 }
@@ -261,22 +251,22 @@ pub fn start_conditional_authentication(
 @external(javascript, "./glasskey_ffi.mjs", "getConditionalCredential")
 fn do_get_conditional_credential(
   options: GetOptions,
-) -> #(Promise(Result(RawCredential, Error)), fn() -> Nil)
+) -> #(Promise(Result(AuthenticationCredential, Error)), fn() -> Nil)
 
 @external(javascript, "./glasskey_ffi.mjs", "getCredential")
 fn do_get_credential(
   options: GetOptions,
-) -> Promise(Result(RawCredential, Error))
+) -> Promise(Result(AuthenticationCredential, Error))
 
 fn get_conditional_credential(
   options: AuthenticationOptions,
-) -> #(Promise(Result(RawCredential, Error)), fn() -> Nil) {
+) -> #(Promise(Result(AuthenticationCredential, Error)), fn() -> Nil) {
   do_get_conditional_credential(to_get_options(options))
 }
 
 fn get_credential(
   options: AuthenticationOptions,
-) -> Promise(Result(RawCredential, Error)) {
+) -> Promise(Result(AuthenticationCredential, Error)) {
   do_get_credential(to_get_options(options))
 }
 
@@ -382,16 +372,6 @@ pub fn encode_registration_response(
   ])
   |> json.to_string
 }
-
-@external(javascript, "./glasskey_ffi.mjs", "extractAuthenticationFields")
-fn extract_authentication_fields(
-  credential: RawCredential,
-) -> AuthenticationCredential
-
-@external(javascript, "./glasskey_ffi.mjs", "extractRegistrationFields")
-fn extract_registration_fields(
-  credential: RawCredential,
-) -> RegistrationCredential
 
 /// Decoder for the `PublicKeyCredentialRequestOptionsJSON` shape produced by
 /// `glasslock/authentication.request`.
@@ -589,16 +569,12 @@ pub fn start_registration(
   )
 
   create_credential(options)
-  |> promise.map(
-    result.map(_, fn(c) {
-      encode_registration_response(extract_registration_fields(c))
-    }),
-  )
+  |> promise.map(result.map(_, encode_registration_response))
 }
 
 fn create_credential(
   options: RegistrationOptions,
-) -> Promise(Result(RawCredential, Error)) {
+) -> Promise(Result(RegistrationCredential, Error)) {
   do_create_credential(CreateOptions(
     challenge: options.challenge,
     rp: Rp(id: options.rp_id, name: options.rp_name),
@@ -629,7 +605,7 @@ fn create_credential(
 @external(javascript, "./glasskey_ffi.mjs", "createCredential")
 fn do_create_credential(
   options: CreateOptions,
-) -> Promise(Result(RawCredential, Error))
+) -> Promise(Result(RegistrationCredential, Error))
 
 fn to_credential_descriptors(
   ids: List(BitArray),
