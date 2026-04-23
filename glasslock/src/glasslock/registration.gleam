@@ -399,16 +399,14 @@ pub fn verify(
     return: Error(glasslock.VerificationMismatch(glasslock.CredentialTypeField)),
   )
 
-  let cd = challenge.data
-
   use client_data <- result.try(internal.parse_client_data(client_data_json))
   use _ <- result.try(internal.verify_client_data(
     client_data,
     expected_type: "webauthn.create",
-    expected_challenge: cd.bytes,
-    expected_origins: cd.origins,
-    allow_cross_origin: cd.allow_cross_origin,
-    allowed_top_origins: cd.allowed_top_origins,
+    expected_challenge: challenge.data.bytes,
+    expected_origins: challenge.data.origins,
+    allow_cross_origin: challenge.data.allow_cross_origin,
+    allowed_top_origins: challenge.data.allowed_top_origins,
   ))
 
   use attestation_obj <- result.try(internal.parse_attestation_object(
@@ -417,17 +415,25 @@ pub fn verify(
   use #(auth_data_bytes, att_stmt, fmt_string) <- result.try(
     internal.extract_attestation_fields(attestation_obj),
   )
-  use _ <- result.try(internal.parse_attestation_format(fmt_string))
+  use <- bool.guard(
+    when: fmt_string != "none",
+    return: Error(glasslock.InvalidAttestation(
+      "unsupported format: " <> fmt_string,
+    )),
+  )
   use auth_data <- result.try(internal.parse_registration_auth_data(
     auth_data_bytes,
   ))
 
-  use _ <- result.try(internal.verify_rp_id(auth_data.rp_id_hash, cd.rp_id))
+  use _ <- result.try(internal.verify_rp_id(
+    auth_data.rp_id_hash,
+    challenge.data.rp_id,
+  ))
   use _ <- result.try(internal.verify_user_policies(
     auth_data.user_present,
     auth_data.user_verified,
-    cd.user_presence,
-    cd.user_verification,
+    challenge.data.user_presence,
+    challenge.data.user_verification,
   ))
 
   let attested = auth_data.attested_credential

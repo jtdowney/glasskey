@@ -181,11 +181,6 @@ pub fn parse_public_key_rejects_missing_alg_test() {
     == Error(glasslock.UnsupportedKey("COSE key missing algorithm (label 3)"))
 }
 
-pub fn parse_attestation_format_rejects_unsupported_test() {
-  assert internal.parse_attestation_format("packed")
-    == Error(glasslock.InvalidAttestation("unsupported format: packed"))
-}
-
 pub fn parse_authentication_auth_data_ignores_extensions_test() {
   let assert Ok(rp_id_hash) =
     crypto.hash(hash.Sha256, bit_array.from_string("example.com"))

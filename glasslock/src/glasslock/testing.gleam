@@ -98,7 +98,7 @@ pub fn build_authentication_authenticator_data(
 ) -> BitArray {
   let assert Ok(rp_id_hash) =
     crypto.hash(hash.Sha256, bit_array.from_string(relying_party_id))
-  let flags_byte = encode_flags(flags, False)
+  let flags_byte = encode_flags(flags, has_attested_credential: False)
 
   bit_array.concat([rp_id_hash, <<flags_byte>>, <<sign_count:size(32)>>])
 }
@@ -269,7 +269,10 @@ pub fn default_flags() -> AuthenticatorFlags {
   AuthenticatorFlags(user_present: True, user_verified: False)
 }
 
-fn encode_flags(flags: AuthenticatorFlags, has_attested_credential: Bool) -> Int {
+fn encode_flags(
+  flags: AuthenticatorFlags,
+  has_attested_credential has_attested_credential: Bool,
+) -> Int {
   let up = case flags.user_present {
     True -> 0x01
     False -> 0
@@ -377,7 +380,7 @@ pub fn build_registration_authenticator_data(
 ) -> BitArray {
   let assert Ok(rp_id_hash) =
     crypto.hash(hash.Sha256, bit_array.from_string(relying_party_id))
-  let flags_byte = encode_flags(flags, True)
+  let flags_byte = encode_flags(flags, has_attested_credential: True)
   let aaguid = <<0:128>>
   let glasslock.CredentialId(raw_credential_id) = credential_id
   let cred_id_len = bit_array.byte_size(raw_credential_id)
