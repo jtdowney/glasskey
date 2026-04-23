@@ -85,7 +85,11 @@ fn decode_response(
         Error(_) -> Error("Server error")
       }
     }
-    Error(_) -> Error("Network error")
+    Error(rsvp.NetworkError) -> Error("Network error")
+    Error(rsvp.BadBody) | Error(rsvp.JsonError(_)) ->
+      Error("Invalid response from server")
+    Error(rsvp.BadUrl(_)) | Error(rsvp.UnhandledResponse(_)) ->
+      Error("Unexpected response")
     Ok(resp) ->
       json.parse(resp.body, decoder)
       |> result.replace_error("Invalid response from server")
@@ -95,24 +99,21 @@ fn decode_response(
 fn decode_register_begin(
   result: Result(Response(String), rsvp.Error),
 ) -> Result(glasskey.RegistrationOptions, String) {
-  let decoder = {
-    use options <- decode.field(
-      "options",
-      glasskey.registration_options_decoder(),
-    )
-    decode.success(options)
-  }
-  decode_response(result, decoder)
+  decode_options(result, glasskey.registration_options_decoder())
 }
 
 fn decode_login_begin(
   result: Result(Response(String), rsvp.Error),
 ) -> Result(glasskey.AuthenticationOptions, String) {
+  decode_options(result, glasskey.authentication_options_decoder())
+}
+
+fn decode_options(
+  result: Result(Response(String), rsvp.Error),
+  options_decoder: decode.Decoder(a),
+) -> Result(a, String) {
   let decoder = {
-    use options <- decode.field(
-      "options",
-      glasskey.authentication_options_decoder(),
-    )
+    use options <- decode.field("options", options_decoder)
     decode.success(options)
   }
   decode_response(result, decoder)

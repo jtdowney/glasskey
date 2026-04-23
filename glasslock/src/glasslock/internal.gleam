@@ -20,12 +20,10 @@ import kryptos/eddsa
 import kryptos/hash
 import kryptos/rsa
 
-/// Supported attestation statement formats.
 pub type AttestationFormat {
   FormatNone
 }
 
-/// An attested credential from registration authenticator data.
 pub type AttestedCredential {
   AttestedCredential(
     aaguid: BitArray,
@@ -34,8 +32,6 @@ pub type AttestedCredential {
   )
 }
 
-/// Parsed authenticator data for an authentication ceremony.
-/// No attested credential is present (AT flag must not be set).
 pub type AuthenticationAuthData {
   AuthenticationAuthData(
     rp_id_hash: BitArray,
@@ -67,8 +63,6 @@ pub type ClientData {
   )
 }
 
-/// Parsed authenticator data for a registration ceremony.
-/// The attested credential is guaranteed present (enforced by the parser).
 pub type RegistrationAuthData {
   RegistrationAuthData(
     rp_id_hash: BitArray,
@@ -97,7 +91,6 @@ type AuthenticatorHeader {
   )
 }
 
-/// Extracts authData, attStmt, and fmt fields from a parsed attestation object.
 pub fn extract_attestation_fields(
   cbor: cbor.Cbor,
 ) -> Result(#(BitArray, cbor.Cbor, String), glasslock.Error) {
@@ -112,7 +105,6 @@ pub fn extract_attestation_fields(
   }
 }
 
-/// Parses a format string into an AttestationFormat enum variant.
 pub fn parse_attestation_format(
   format: String,
 ) -> Result(AttestationFormat, glasslock.Error) {
@@ -122,21 +114,16 @@ pub fn parse_attestation_format(
   }
 }
 
-/// Parses a CBOR-encoded attestation object.
 pub fn parse_attestation_object(
   data: BitArray,
 ) -> Result(cbor.Cbor, glasslock.Error) {
   cbor.decode_all(data)
 }
 
-/// Verifies an attestation statement against the expected format.
-pub fn verify_attestation(
-  format: AttestationFormat,
-  statement: cbor.Cbor,
-) -> Result(Nil, glasslock.Error) {
-  case format, statement {
-    FormatNone, cbor.Map([]) -> Ok(Nil)
-    FormatNone, _ ->
+pub fn verify_attestation(statement: cbor.Cbor) -> Result(Nil, glasslock.Error) {
+  case statement {
+    cbor.Map([]) -> Ok(Nil)
+    _ ->
       Error(glasslock.InvalidAttestation(
         "none attestation with non-empty statement",
       ))
@@ -173,7 +160,6 @@ fn get_cbor_string(
   }
 }
 
-/// Parses authenticator data for authentication, rejecting the AT flag.
 pub fn parse_authentication_auth_data(
   data: BitArray,
 ) -> Result(AuthenticationAuthData, glasslock.Error) {
@@ -201,7 +187,6 @@ pub fn parse_authentication_auth_data(
   ))
 }
 
-/// Parses authenticator data for registration, requiring the AT flag and credential.
 pub fn parse_registration_auth_data(
   data: BitArray,
 ) -> Result(RegistrationAuthData, glasslock.Error) {
@@ -286,15 +271,14 @@ fn split_cose_key(
     True -> {
       use #(_, remaining) <- result.try(cbor.decode(data))
       let key_len = bit_array.byte_size(data) - bit_array.byte_size(remaining)
-      case data {
-        <<key_bytes:bytes-size(key_len), _:bytes>> -> Ok(key_bytes)
-        _ -> Error(glasslock.ParseError("Invalid attested credential data"))
-      }
+      bit_array.slice(data, at: 0, take: key_len)
+      |> result.replace_error(glasslock.ParseError(
+        "Invalid attested credential data",
+      ))
     }
   }
 }
 
-/// Decodes a base64url-encoded string, returning a descriptive ParseError on failure.
 pub fn decode_base64url(
   encoded: String,
   field_name: String,
@@ -305,7 +289,6 @@ pub fn decode_base64url(
   ))
 }
 
-/// Decodes an optional base64url-encoded string.
 pub fn decode_optional_base64url(
   value: Option(String),
   field_name: String,
@@ -349,7 +332,6 @@ pub fn parse_client_data(data: BitArray) -> Result(ClientData, glasslock.Error) 
   })
 }
 
-/// Parses a CBOR-encoded COSE public key using gose.
 pub fn parse_public_key(
   cbor_bytes: BitArray,
 ) -> Result(#(cose.Key, gose.DigitalSignatureAlg), glasslock.Error) {
@@ -375,14 +357,8 @@ fn extract_signature_alg(
   }
 }
 
-/// Verifies a signature over `message` using the COSE key and algorithm.
-///
-/// Uses `gose` only for CBOR to SPKI DER conversion, then hands off to
-/// `kryptos` for the actual verify. Expects WebAuthn wire-format
-/// signatures: ECDSA as ASN.1 DER, Ed25519 as raw, RSA as raw PKCS#1
-/// v1.5 or PSS bytes.
 pub fn verify_signature(
-  key key: cose.Key,
+  key: cose.Key,
   alg alg: gose.DigitalSignatureAlg,
   message message: BitArray,
   signature signature: BitArray,
@@ -491,7 +467,6 @@ fn map_gose_error(err: gose.GoseError) -> glasslock.Error {
   }
 }
 
-/// Converts a UserVerification enum to its WebAuthn string representation.
 pub fn user_verification_to_string(
   verification: glasslock.UserVerification,
 ) -> String {
@@ -532,7 +507,6 @@ fn user_presence_from_string(
   }
 }
 
-/// Rejects unknown challenge blob format versions. Only `1` is supported today.
 pub fn check_challenge_version(version: Int) -> Result(Nil, glasslock.Error) {
   case version {
     1 -> Ok(Nil)
@@ -543,7 +517,6 @@ pub fn check_challenge_version(version: Int) -> Result(Nil, glasslock.Error) {
   }
 }
 
-/// Rejects a challenge blob whose `kind` does not match the expected ceremony.
 pub fn check_challenge_kind(
   actual: String,
   expected: String,
@@ -557,9 +530,6 @@ pub fn check_challenge_kind(
   }
 }
 
-/// Emits the seven fields that are shared between registration and authentication
-/// challenge blobs. Callers prepend the version + kind tag and append any
-/// ceremony-specific fields (e.g. `algorithms` or `allow_credentials`).
 pub fn encode_challenge_data_fields(
   data: ChallengeData,
 ) -> List(#(String, json.Json)) {
@@ -577,13 +547,6 @@ pub fn encode_challenge_data_fields(
   ]
 }
 
-/// Decoder for the seven shared challenge fields that both ceremonies emit.
-///
-/// Composed with `decode.then` inside each ceremony module's decoder so
-/// version/kind and ceremony-specific fields can be read from the same root
-/// object. Returns a `Result` so validation failures (bad base64url, unknown
-/// user-verification string) surface their specific `ParseError` messages
-/// rather than a generic decode failure.
 pub fn challenge_data_decoder() -> decode.Decoder(
   Result(ChallengeData, glasslock.Error),
 ) {
@@ -637,12 +600,8 @@ pub fn parse_challenge_shared(
   Ok(#(data, tail))
 }
 
-/// Validates client data fields against expected ceremony values.
-///
-/// `expected_origins` is an allow-list: the authenticator-signed
-/// `clientDataJSON.origin` must match one of the provided origins.
 pub fn verify_client_data(
-  client_data client_data: ClientData,
+  client_data: ClientData,
   expected_type expected_type: String,
   expected_challenge expected_challenge: BitArray,
   expected_origins expected_origins: Set(String),
@@ -686,7 +645,6 @@ fn top_origin_allowed(top_origin: Option(String), allowed: List(String)) -> Bool
   }
 }
 
-/// Verifies the RP ID hash matches the expected RP ID.
 pub fn verify_rp_id(
   actual_hash: BitArray,
   expected_rp_id: String,
@@ -702,7 +660,6 @@ pub fn verify_rp_id(
   Ok(Nil)
 }
 
-/// Verifies user presence and verification policies.
 pub fn verify_user_policies(
   user_present: Bool,
   user_verified: Bool,

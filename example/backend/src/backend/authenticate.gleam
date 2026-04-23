@@ -57,7 +57,7 @@ fn complete_authentication(
       |> result.map_error(fn(_) { #("session not found", 400) }),
     )
     use challenge <- result.try(
-      authentication.parse_challenge(encoded:)
+      authentication.parse_challenge(encoded)
       |> result.map_error(fn(_) { #("session not found", 400) }),
     )
     use info <- result.try(

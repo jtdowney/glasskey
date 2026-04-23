@@ -5,7 +5,7 @@ import gleam/uri.{type Uri}
 pub type Model {
   Unauthenticated(page: UnauthenticatedPage, status: String)
   Authenticating(username: String, stage: RegisterStage, status: String)
-  Authenticated(username: String, status: String)
+  Authenticated(username: String)
 }
 
 pub type UnauthenticatedPage {

@@ -10,6 +10,7 @@ import gleam/option
 import gleam/string
 import kryptos/crypto
 import kryptos/hash
+import qcheck
 
 pub fn request_emits_core_fields_test() {
   let #(options_json, challenge) =
@@ -630,36 +631,28 @@ pub fn verify_discoverable_flow_test() {
   assert cred.sign_count == 1
 }
 
-pub fn parse_response_extracts_credential_info_test() {
-  let credential_id = <<1, 2, 3, 4, 5, 6, 7, 8>>
-  let user_handle = <<9, 10, 11, 12>>
+pub fn parse_response_roundtrip_test() {
+  use inputs <- qcheck.given(qcheck.tuple2(
+    qcheck.byte_aligned_bit_array(),
+    qcheck.option_from(qcheck.byte_aligned_bit_array()),
+  ))
+  let #(credential_id, user_handle) = inputs
+
+  let user_handle_json =
+    option.map(user_handle, fn(bytes) {
+      json.string(bit_array.base64_url_encode(bytes, False))
+    })
 
   let response_json =
     response_envelope(
       credential_id:,
       credential_type: "public-key",
-      user_handle: option.Some(
-        json.string(bit_array.base64_url_encode(user_handle, False)),
-      ),
+      user_handle: user_handle_json,
     )
 
   let assert Ok(info) = authentication.parse_response(response_json)
   assert info.credential_id == glasslock.CredentialId(credential_id)
-  assert info.user_handle == option.Some(user_handle)
-}
-
-pub fn parse_response_handles_missing_user_handle_test() {
-  let credential_id = <<1, 2, 3, 4, 5, 6, 7, 8>>
-
-  let response_json =
-    response_envelope(
-      credential_id:,
-      credential_type: "public-key",
-      user_handle: option.None,
-    )
-
-  let assert Ok(info) = authentication.parse_response(response_json)
-  assert info.user_handle == option.None
+  assert info.user_handle == user_handle
 }
 
 pub fn parse_response_handles_null_user_handle_test() {
@@ -695,6 +688,67 @@ pub fn parse_response_rejects_invalid_json_test() {
     == Error(glasslock.ParseError("Invalid authentication response JSON"))
 }
 
+pub fn sign_count_monotonicity_test() {
+  let config = qcheck.default_config() |> qcheck.with_test_count(100)
+  use inputs <- qcheck.run(
+    config,
+    qcheck.tuple2(
+      qcheck.bounded_int(1, 1_000_000),
+      qcheck.bounded_int(1, 1_000_000),
+    ),
+  )
+  let #(stored, new) = inputs
+  let keypair = testing.generate_es256_keypair()
+  let credential_id = crypto.random_bytes(16)
+  let public_key = testing.public_key(keypair)
+  let stored_cred =
+    glasslock.Credential(
+      id: glasslock.CredentialId(credential_id),
+      public_key: public_key,
+      sign_count: stored,
+    )
+
+  let #(_, challenge) =
+    authentication.request(
+      relying_party_id: "example.com",
+      origins: ["https://example.com"],
+      options: authentication.Options(
+        ..authentication.default_options(),
+        allow_credentials: [glasslock.CredentialId(credential_id)],
+      ),
+    )
+  let response =
+    testing.build_authentication_response(
+      challenge: challenge,
+      keypair: keypair,
+      sign_count: new,
+    )
+  let response_json =
+    testing.to_authentication_json(
+      response,
+      credential_id: glasslock.CredentialId(credential_id),
+      user_handle: option.None,
+    )
+
+  let result =
+    authentication.verify(
+      response_json: response_json,
+      challenge: challenge,
+      stored: stored_cred,
+    )
+
+  case new > stored {
+    True -> {
+      let assert Ok(_) = result
+      Nil
+    }
+    False -> {
+      assert result == Error(glasslock.SignCountRegression)
+      Nil
+    }
+  }
+}
+
 type AuthSetup {
   AuthSetup(
     stored_sign_count: Int,
@@ -721,7 +775,7 @@ pub fn encode_decode_roundtrip_preserves_challenge_test() {
     )
 
   let encoded = authentication.encode_challenge(challenge)
-  let assert Ok(decoded) = authentication.parse_challenge(encoded:)
+  let assert Ok(decoded) = authentication.parse_challenge(encoded)
 
   assert testing.authentication_challenge_bytes(decoded)
     == testing.authentication_challenge_bytes(challenge)
@@ -782,7 +836,7 @@ pub fn decode_rejects_registration_blob_test() {
     )
   let encoded = registration.encode_challenge(reg_challenge)
 
-  let result = authentication.parse_challenge(encoded:)
+  let result = authentication.parse_challenge(encoded)
   assert result
     == Error(glasslock.ParseError(
       "Expected authentication challenge, got registration",
@@ -805,7 +859,7 @@ pub fn decode_rejects_unknown_version_test() {
     ])
     |> json.to_string
 
-  let result = authentication.parse_challenge(encoded: blob)
+  let result = authentication.parse_challenge(blob)
   assert result
     == Error(glasslock.ParseError("Unsupported challenge version: 99"))
 }
