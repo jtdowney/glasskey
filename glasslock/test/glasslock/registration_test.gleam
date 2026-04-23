@@ -420,14 +420,6 @@ fn non_empty_list_from(
   qcheck.map2(element, qcheck.list_from(element), fn(x, xs) { [x, ..xs] })
 }
 
-fn keypair_for_algorithm(alg: registration.Algorithm) -> testing.KeyPair {
-  case alg {
-    registration.Es256 -> testing.generate_es256_keypair()
-    registration.Ed25519 -> testing.generate_ed25519_keypair()
-    registration.Rs256 -> testing.generate_rs256_keypair()
-  }
-}
-
 pub fn encode_decode_roundtrip_preserves_challenge_test() {
   use inputs <- qcheck.given(qcheck.tuple5(
     qcheck.non_empty_string(),
@@ -473,16 +465,34 @@ pub fn encode_decode_roundtrip_preserves_challenge_test() {
       testing.registration_challenge_origins(challenge),
       string.compare,
     )
+}
 
-  let assert [first_alg, ..] = algorithms
+pub fn decoded_challenge_drives_verify_test() {
+  let #(_, challenge) =
+    registration.request(
+      relying_party: registration.RelyingParty(
+        id: "example.com",
+        name: "Test App",
+      ),
+      user: registration.User(
+        id: <<1, 2, 3, 4>>,
+        name: "testuser",
+        display_name: "Test User",
+      ),
+      origins: ["https://example.com"],
+      options: registration.default_options(),
+    )
+
+  let encoded = registration.encode_challenge(challenge)
+  let assert Ok(decoded) = registration.parse_challenge(encoded)
+
   let response =
     testing.build_registration_response_with_keypair(
       challenge: decoded,
-      keypair: keypair_for_algorithm(first_alg),
+      keypair: testing.generate_es256_keypair(),
     )
   let response_json = testing.to_registration_json(response)
   let assert Ok(_) = registration.verify(response_json:, challenge: decoded)
-  Nil
 }
 
 pub fn decode_rejects_authentication_blob_test() {

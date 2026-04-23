@@ -410,10 +410,14 @@ pub fn registration_options_decoder() -> decode.Decoder(RegistrationOptions) {
     ["authenticatorSelection", "userVerification"],
     requirement_decoder(),
   )
-  use authenticator_attachment <- decode.field(
-    "authenticatorSelection",
-    optional_attachment_decoder(),
-  )
+  use authenticator_attachment <- decode.field("authenticatorSelection", {
+    use attachment <- decode.optional_field(
+      "authenticatorAttachment",
+      option.None,
+      decode.optional(authenticator_attachment_decoder()),
+    )
+    decode.success(attachment)
+  })
   use exclude_credentials <- decode.optional_field(
     "excludeCredentials",
     [],
@@ -470,17 +474,6 @@ fn authenticator_attachment_decoder() -> decode.Decoder(AuthenticatorAttachment)
       _ -> decode.failure(Platform, "authenticatorAttachment")
     }
   })
-}
-
-fn optional_attachment_decoder() -> decode.Decoder(
-  Option(AuthenticatorAttachment),
-) {
-  use attachment <- decode.optional_field(
-    "authenticatorAttachment",
-    option.None,
-    decode.optional(authenticator_attachment_decoder()),
-  )
-  decode.success(attachment)
 }
 
 fn base64url_decoder() -> decode.Decoder(BitArray) {

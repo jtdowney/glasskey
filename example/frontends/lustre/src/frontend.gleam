@@ -4,7 +4,7 @@ import frontend/router
 import frontend/view
 import glasskey
 import gleam/javascript/promise.{type Promise}
-import gleam/option.{None}
+import gleam/option
 import gleam/uri.{type Uri}
 import lustre
 import lustre/effect.{type Effect}
@@ -91,7 +91,7 @@ fn welcome_route(m: model.Model) -> #(model.Model, Effect(model.Msg)) {
     model.Authenticated(..) -> #(m, effect.none())
     model.Unauthenticated(..) | model.Authenticating(..) -> #(
       m,
-      modem.push(router.to_path(router.Home), None, None),
+      modem.push(router.to_path(router.Home), option.None, option.None),
     )
   }
 }
@@ -424,7 +424,7 @@ fn handle_login_complete(
       Ok(username)
     -> #(
       model.Authenticated(username:),
-      modem.push(router.to_path(router.Welcome), None, None),
+      modem.push(router.to_path(router.Welcome), option.None, option.None),
     )
     model.Unauthenticated(
       page: model.LoginPage(stage: model.LoginVerifying),

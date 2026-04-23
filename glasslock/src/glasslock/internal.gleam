@@ -20,10 +20,6 @@ import kryptos/eddsa
 import kryptos/hash
 import kryptos/rsa
 
-pub type AttestationFormat {
-  FormatNone
-}
-
 pub type AttestedCredential {
   AttestedCredential(
     aaguid: BitArray,
@@ -102,15 +98,6 @@ pub fn extract_attestation_fields(
       Ok(#(auth_data, att_stmt, fmt))
     }
     _ -> Error(glasslock.ParseError("Attestation object must be a map"))
-  }
-}
-
-pub fn parse_attestation_format(
-  format: String,
-) -> Result(AttestationFormat, glasslock.Error) {
-  case format {
-    "none" -> Ok(FormatNone)
-    _ -> Error(glasslock.InvalidAttestation("unsupported format: " <> format))
   }
 }
 

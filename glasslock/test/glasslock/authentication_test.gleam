@@ -465,6 +465,7 @@ pub fn verify_rejects_at_flag_in_authentication_test() {
   // exposes this since it's illegal input for the authentication ceremony.
   let assert Ok(rp_id_hash) =
     crypto.hash(hash.Sha256, bit_array.from_string("example.com"))
+  // 0x41 = UP (0x01) | AT (0x40)
   let auth_data =
     bit_array.concat([rp_id_hash, <<0x41>>, <<0x00, 0x00, 0x00, 0x01>>])
 
@@ -789,6 +790,25 @@ pub fn encode_decode_roundtrip_preserves_challenge_test() {
       testing.authentication_challenge_origins(challenge),
       string.compare,
     )
+}
+
+pub fn decoded_challenge_drives_verify_test() {
+  let cred_a = glasslock.CredentialId(<<1, 2, 3, 4>>)
+  let cred_b = glasslock.CredentialId(<<5, 6, 7, 8>>)
+  let #(_, challenge) =
+    authentication.request(
+      relying_party_id: "example.com",
+      origins: ["https://example.com", "https://alt.example.com"],
+      options: authentication.Options(
+        ..authentication.default_options(),
+        allow_cross_origin: True,
+        allow_credentials: [cred_a, cred_b],
+        allowed_top_origins: ["https://top.example.com"],
+      ),
+    )
+
+  let encoded = authentication.encode_challenge(challenge)
+  let assert Ok(decoded) = authentication.parse_challenge(encoded)
 
   let keypair = testing.generate_es256_keypair()
   let stored_credential =
@@ -797,8 +817,6 @@ pub fn encode_decode_roundtrip_preserves_challenge_test() {
       public_key: testing.public_key(keypair),
       sign_count: 0,
     )
-  // Swap in a stored credential whose id matches cred_a so we can drive verify
-  // end-to-end with the decoded challenge and prove allow_credentials survived.
   let response =
     testing.build_authentication_response(
       challenge: decoded,
