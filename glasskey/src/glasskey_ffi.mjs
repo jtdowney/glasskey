@@ -45,8 +45,8 @@ export async function createCredential(opts) {
     },
   };
 
-  if (opts.timeout > 0) {
-    publicKey.timeout = opts.timeout;
+  if (Option$isSome(opts.timeout)) {
+    publicKey.timeout = Option$Some$0(opts.timeout);
   }
 
   if (Option$isSome(opts.authenticator_selection.authenticator_attachment)) {
@@ -72,18 +72,18 @@ export async function createCredential(opts) {
   }
 }
 
-export async function getCredential(opts) {
+function buildPublicKeyForGet(opts) {
   const publicKey = {
     challenge: opts.challenge.rawBuffer,
     userVerification: opts.user_verification,
   };
 
-  if (opts.rp_id) {
-    publicKey.rpId = opts.rp_id;
+  if (Option$isSome(opts.rp_id)) {
+    publicKey.rpId = Option$Some$0(opts.rp_id);
   }
 
-  if (opts.timeout > 0) {
-    publicKey.timeout = opts.timeout;
+  if (Option$isSome(opts.timeout)) {
+    publicKey.timeout = Option$Some$0(opts.timeout);
   }
 
   if (opts.allow_credentials.length > 0) {
@@ -91,6 +91,12 @@ export async function getCredential(opts) {
       opts.allow_credentials,
     );
   }
+
+  return publicKey;
+}
+
+export async function getCredential(opts) {
+  const publicKey = buildPublicKeyForGet(opts);
 
   try {
     const credential = await navigator.credentials.get({ publicKey });
@@ -104,26 +110,11 @@ export async function getCredential(opts) {
   }
 }
 
+// Not async: must return the [promise, abort] tuple synchronously so the
+// caller receives the abort handle before the ceremony resolves.
 export function getConditionalCredential(opts) {
   const controller = new AbortController();
-  const publicKey = {
-    challenge: opts.challenge.rawBuffer,
-    userVerification: opts.user_verification,
-  };
-
-  if (opts.rp_id) {
-    publicKey.rpId = opts.rp_id;
-  }
-
-  if (opts.timeout > 0) {
-    publicKey.timeout = opts.timeout;
-  }
-
-  if (opts.allow_credentials.length > 0) {
-    publicKey.allowCredentials = toCredentialDescriptors(
-      opts.allow_credentials,
-    );
-  }
+  const publicKey = buildPublicKeyForGet(opts);
 
   const promise = navigator.credentials
     .get({

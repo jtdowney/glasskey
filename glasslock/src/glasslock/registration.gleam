@@ -170,19 +170,22 @@ pub fn encode_challenge(challenge: Challenge) -> String {
   [
     #("v", json.int(1)),
     #("kind", json.string("registration")),
+    #("algorithms", algorithms),
     ..internal.encode_challenge_data_fields(challenge.data)
   ]
-  |> list.append([#("algorithms", algorithms)])
   |> json.object
   |> json.to_string
+}
+
+@internal
+pub fn challenge_data(challenge: Challenge) -> internal.ChallengeData {
+  challenge.data
 }
 
 /// Decode a previously-encoded registration challenge. Returns a
 /// `ParseError` if the blob is malformed, encodes an authentication
 /// challenge, or uses an unsupported format version.
-pub fn parse_challenge(
-  encoded encoded: String,
-) -> Result(Challenge, glasslock.Error) {
+pub fn parse_challenge(encoded: String) -> Result(Challenge, glasslock.Error) {
   let decoder = {
     use algs <- decode.optional_field("algorithms", [], decode.list(decode.int))
     decode.success(algs)
@@ -400,7 +403,7 @@ pub fn verify(
 
   use client_data <- result.try(internal.parse_client_data(client_data_json))
   use _ <- result.try(internal.verify_client_data(
-    client_data:,
+    client_data,
     expected_type: "webauthn.create",
     expected_challenge: cd.bytes,
     expected_origins: cd.origins,
@@ -414,7 +417,7 @@ pub fn verify(
   use #(auth_data_bytes, att_stmt, fmt_string) <- result.try(
     internal.extract_attestation_fields(attestation_obj),
   )
-  use fmt <- result.try(internal.parse_attestation_format(fmt_string))
+  use _ <- result.try(internal.parse_attestation_format(fmt_string))
   use auth_data <- result.try(internal.parse_registration_auth_data(
     auth_data_bytes,
   ))
@@ -447,7 +450,7 @@ pub fn verify(
     )),
   )
 
-  internal.verify_attestation(fmt, att_stmt)
+  internal.verify_attestation(att_stmt)
   |> result.replace(glasslock.Credential(
     id: glasslock.CredentialId(attested.credential_id),
     public_key: glasslock.PublicKey(attested.public_key_cbor),

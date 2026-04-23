@@ -8,6 +8,7 @@ import gleam/json
 import gleam/list
 import gleam/option
 import gleam/string
+import qcheck
 
 pub fn request_emits_core_fields_test() {
   let #(options_json, challenge) = make_request(registration.default_options())
@@ -406,31 +407,59 @@ pub fn verify_rejects_invalid_credential_type_test() {
     == Error(glasslock.VerificationMismatch(glasslock.CredentialTypeField))
 }
 
+fn algorithm_generator() -> qcheck.Generator(registration.Algorithm) {
+  qcheck.from_generators(qcheck.return(registration.Es256), [
+    qcheck.return(registration.Ed25519),
+    qcheck.return(registration.Rs256),
+  ])
+}
+
+fn non_empty_list_from(
+  element: qcheck.Generator(a),
+) -> qcheck.Generator(List(a)) {
+  qcheck.map2(element, qcheck.list_from(element), fn(x, xs) { [x, ..xs] })
+}
+
+fn keypair_for_algorithm(alg: registration.Algorithm) -> testing.KeyPair {
+  case alg {
+    registration.Es256 -> testing.generate_es256_keypair()
+    registration.Ed25519 -> testing.generate_ed25519_keypair()
+    registration.Rs256 -> testing.generate_rs256_keypair()
+  }
+}
+
 pub fn encode_decode_roundtrip_preserves_challenge_test() {
+  use inputs <- qcheck.given(qcheck.tuple5(
+    qcheck.non_empty_string(),
+    non_empty_list_from(qcheck.non_empty_string()),
+    non_empty_list_from(algorithm_generator()),
+    qcheck.list_from(qcheck.non_empty_string()),
+    qcheck.bool(),
+  ))
+  let #(rp_id, origins, algorithms, allowed_top_origins, allow_cross_origin) =
+    inputs
+
   let options =
     registration.Options(
       ..registration.default_options(),
-      allow_cross_origin: True,
-      algorithms: [registration.Es256, registration.Ed25519, registration.Rs256],
-      allowed_top_origins: ["https://top.example.com"],
+      allow_cross_origin:,
+      algorithms:,
+      allowed_top_origins:,
     )
   let #(_, challenge) =
     registration.request(
-      relying_party: registration.RelyingParty(
-        id: "example.com",
-        name: "Test App",
-      ),
+      relying_party: registration.RelyingParty(id: rp_id, name: "Test App"),
       user: registration.User(
         id: <<1, 2, 3, 4>>,
         name: "testuser",
         display_name: "Test User",
       ),
-      origins: ["https://example.com", "https://alt.example.com"],
+      origins:,
       options:,
     )
 
   let encoded = registration.encode_challenge(challenge)
-  let assert Ok(decoded) = registration.parse_challenge(encoded:)
+  let assert Ok(decoded) = registration.parse_challenge(encoded)
 
   assert testing.registration_challenge_bytes(decoded)
     == testing.registration_challenge_bytes(challenge)
@@ -445,9 +474,15 @@ pub fn encode_decode_roundtrip_preserves_challenge_test() {
       string.compare,
     )
 
-  let response = testing.build_registration_response(challenge: decoded)
+  let assert [first_alg, ..] = algorithms
+  let response =
+    testing.build_registration_response_with_keypair(
+      challenge: decoded,
+      keypair: keypair_for_algorithm(first_alg),
+    )
   let response_json = testing.to_registration_json(response)
   let assert Ok(_) = registration.verify(response_json:, challenge: decoded)
+  Nil
 }
 
 pub fn decode_rejects_authentication_blob_test() {
@@ -459,7 +494,7 @@ pub fn decode_rejects_authentication_blob_test() {
     )
   let encoded = authentication.encode_challenge(auth_challenge)
 
-  let result = registration.parse_challenge(encoded:)
+  let result = registration.parse_challenge(encoded)
   assert result
     == Error(glasslock.ParseError(
       "Expected registration challenge, got authentication",
@@ -482,7 +517,7 @@ pub fn decode_rejects_unknown_version_test() {
     ])
     |> json.to_string
 
-  let result = registration.parse_challenge(encoded: blob)
+  let result = registration.parse_challenge(blob)
   assert result
     == Error(glasslock.ParseError("Unsupported challenge version: 99"))
 }

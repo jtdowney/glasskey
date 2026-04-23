@@ -12,11 +12,6 @@ pub fn main() {
   unitest.main()
 }
 
-fn to_dynamic(json_string: String) -> Dynamic {
-  let assert Ok(value) = json.parse(json_string, decode.dynamic)
-  value
-}
-
 type RegistrationFixture {
   RegistrationFixture(
     challenge: String,
@@ -53,53 +48,62 @@ fn default_registration_fixture() -> RegistrationFixture {
   )
 }
 
-fn build_registration_options(fixture: RegistrationFixture) -> String {
+fn build_registration_options(fixture: RegistrationFixture) -> Dynamic {
   let auth_selection_fields = [
-    #("residentKey", json.string(fixture.resident_key)),
-    #("userVerification", json.string(fixture.user_verification)),
+    #(dynamic.string("residentKey"), dynamic.string(fixture.resident_key)),
+    #(
+      dynamic.string("userVerification"),
+      dynamic.string(fixture.user_verification),
+    ),
   ]
   let auth_selection_fields = case fixture.authenticator_attachment {
     option.Some(value) -> [
-      #("authenticatorAttachment", json.string(value)),
+      #(dynamic.string("authenticatorAttachment"), dynamic.string(value)),
       ..auth_selection_fields
     ]
     option.None -> auth_selection_fields
   }
 
   let pub_key_cred_params =
-    json.preprocessed_array(
+    dynamic.array(
       list.map(fixture.algorithms, fn(alg) {
-        json.object([
-          #("type", json.string("public-key")),
-          #("alg", json.int(alg)),
+        dynamic.properties([
+          #(dynamic.string("type"), dynamic.string("public-key")),
+          #(dynamic.string("alg"), dynamic.int(alg)),
         ])
       }),
     )
 
   let fields = [
-    #("challenge", json.string(fixture.challenge)),
+    #(dynamic.string("challenge"), dynamic.string(fixture.challenge)),
     #(
-      "rp",
-      json.object([
-        #("id", json.string(fixture.rp_id)),
-        #("name", json.string(fixture.rp_name)),
+      dynamic.string("rp"),
+      dynamic.properties([
+        #(dynamic.string("id"), dynamic.string(fixture.rp_id)),
+        #(dynamic.string("name"), dynamic.string(fixture.rp_name)),
       ]),
     ),
     #(
-      "user",
-      json.object([
-        #("id", json.string(fixture.user_id)),
-        #("name", json.string(fixture.user_name)),
-        #("displayName", json.string(fixture.user_display_name)),
+      dynamic.string("user"),
+      dynamic.properties([
+        #(dynamic.string("id"), dynamic.string(fixture.user_id)),
+        #(dynamic.string("name"), dynamic.string(fixture.user_name)),
+        #(
+          dynamic.string("displayName"),
+          dynamic.string(fixture.user_display_name),
+        ),
       ]),
     ),
-    #("pubKeyCredParams", pub_key_cred_params),
-    #("attestation", json.string(fixture.attestation)),
-    #("authenticatorSelection", json.object(auth_selection_fields)),
+    #(dynamic.string("pubKeyCredParams"), pub_key_cred_params),
+    #(dynamic.string("attestation"), dynamic.string(fixture.attestation)),
+    #(
+      dynamic.string("authenticatorSelection"),
+      dynamic.properties(auth_selection_fields),
+    ),
   ]
 
   let fields = case fixture.timeout {
-    option.Some(t) -> [#("timeout", json.int(t)), ..fields]
+    option.Some(t) -> [#(dynamic.string("timeout"), dynamic.int(t)), ..fields]
     option.None -> fields
   }
 
@@ -107,12 +111,12 @@ fn build_registration_options(fixture: RegistrationFixture) -> String {
     [] -> fields
     ids -> [
       #(
-        "excludeCredentials",
-        json.preprocessed_array(
+        dynamic.string("excludeCredentials"),
+        dynamic.array(
           list.map(ids, fn(id) {
-            json.object([
-              #("id", json.string(id)),
-              #("type", json.string("public-key")),
+            dynamic.properties([
+              #(dynamic.string("id"), dynamic.string(id)),
+              #(dynamic.string("type"), dynamic.string("public-key")),
             ])
           }),
         ),
@@ -121,11 +125,11 @@ fn build_registration_options(fixture: RegistrationFixture) -> String {
     ]
   }
 
-  json.object(fields) |> json.to_string
+  dynamic.properties(fields)
 }
 
 pub fn decode_registration_options_test() {
-  let json =
+  let dyn =
     build_registration_options(
       RegistrationFixture(
         ..default_registration_fixture(),
@@ -138,8 +142,7 @@ pub fn decode_registration_options_test() {
       ),
     )
 
-  let assert Ok(opt) =
-    decode.run(to_dynamic(json), glasskey.registration_options_decoder())
+  let assert Ok(opt) = decode.run(dyn, glasskey.registration_options_decoder())
 
   assert opt.challenge == <<"test-challenge":utf8>>
   assert opt.rp_id == "example.com"
@@ -156,23 +159,29 @@ pub fn decode_registration_options_test() {
   assert opt.exclude_credentials == []
 }
 
-pub fn decode_registration_options_with_all_algorithms_test() {
-  let json =
-    build_registration_options(
-      RegistrationFixture(..default_registration_fixture(), algorithms: [
-        -7,
-        -8,
-        -257,
-      ]),
-    )
+pub fn decode_registration_options_algorithm_variants_test() {
+  let variants = [
+    #(-7, glasskey.Es256),
+    #(-8, glasskey.Ed25519),
+    #(-257, glasskey.Rs256),
+  ]
 
-  let assert Ok(opt) =
-    decode.run(to_dynamic(json), glasskey.registration_options_decoder())
-  assert opt.algorithms == [glasskey.Es256, glasskey.Ed25519, glasskey.Rs256]
+  list.each(variants, fn(pair) {
+    let #(int, expected) = pair
+    let dyn =
+      build_registration_options(
+        RegistrationFixture(..default_registration_fixture(), algorithms: [
+          int,
+        ]),
+      )
+    let assert Ok(opt) =
+      decode.run(dyn, glasskey.registration_options_decoder())
+    assert opt.algorithms == [expected]
+  })
 }
 
 pub fn decode_registration_options_with_exclude_credentials_test() {
-  let json =
+  let dyn =
     build_registration_options(
       RegistrationFixture(
         ..default_registration_fixture(),
@@ -180,13 +189,12 @@ pub fn decode_registration_options_with_exclude_credentials_test() {
       ),
     )
 
-  let assert Ok(opt) =
-    decode.run(to_dynamic(json), glasskey.registration_options_decoder())
+  let assert Ok(opt) = decode.run(dyn, glasskey.registration_options_decoder())
 
   assert opt.exclude_credentials == [<<1, 2, 3>>]
 }
 
-pub fn decode_registration_options_requirement_variants_test() {
+pub fn decode_registration_options_resident_key_variants_test() {
   let variants = [
     #("required", glasskey.Required),
     #("preferred", glasskey.Preferred),
@@ -195,7 +203,7 @@ pub fn decode_registration_options_requirement_variants_test() {
 
   list.each(variants, fn(pair) {
     let #(string, expected) = pair
-    let json =
+    let dyn =
       build_registration_options(
         RegistrationFixture(
           ..default_registration_fixture(),
@@ -203,8 +211,30 @@ pub fn decode_registration_options_requirement_variants_test() {
         ),
       )
     let assert Ok(opt) =
-      decode.run(to_dynamic(json), glasskey.registration_options_decoder())
+      decode.run(dyn, glasskey.registration_options_decoder())
     assert opt.resident_key == expected
+  })
+}
+
+pub fn decode_registration_options_user_verification_variants_test() {
+  let variants = [
+    #("required", glasskey.Required),
+    #("preferred", glasskey.Preferred),
+    #("discouraged", glasskey.Discouraged),
+  ]
+
+  list.each(variants, fn(pair) {
+    let #(string, expected) = pair
+    let dyn =
+      build_registration_options(
+        RegistrationFixture(
+          ..default_registration_fixture(),
+          user_verification: string,
+        ),
+      )
+    let assert Ok(opt) =
+      decode.run(dyn, glasskey.registration_options_decoder())
+    assert opt.user_verification == expected
   })
 }
 
@@ -218,7 +248,7 @@ pub fn decode_registration_options_attestation_variants_test() {
 
   list.each(variants, fn(pair) {
     let #(string, expected) = pair
-    let json_str =
+    let dyn =
       build_registration_options(
         RegistrationFixture(
           ..default_registration_fixture(),
@@ -226,7 +256,7 @@ pub fn decode_registration_options_attestation_variants_test() {
         ),
       )
     let assert Ok(opt) =
-      decode.run(to_dynamic(json_str), glasskey.registration_options_decoder())
+      decode.run(dyn, glasskey.registration_options_decoder())
     assert opt.attestation == expected
   })
 }
@@ -239,7 +269,7 @@ pub fn decode_registration_options_authenticator_attachment_variants_test() {
 
   list.each(variants, fn(pair) {
     let #(string, expected) = pair
-    let json_str =
+    let dyn =
       build_registration_options(
         RegistrationFixture(
           ..default_registration_fixture(),
@@ -247,18 +277,18 @@ pub fn decode_registration_options_authenticator_attachment_variants_test() {
         ),
       )
     let assert Ok(opt) =
-      decode.run(to_dynamic(json_str), glasskey.registration_options_decoder())
+      decode.run(dyn, glasskey.registration_options_decoder())
     assert opt.authenticator_attachment == expected
   })
 }
 
 pub fn decode_registration_options_missing_required_fields_test() {
   let assert Error(_) =
-    decode.run(to_dynamic("{}"), glasskey.registration_options_decoder())
+    decode.run(dynamic.properties([]), glasskey.registration_options_decoder())
 }
 
 pub fn decode_registration_options_unknown_requirement_test() {
-  let json =
+  let dyn =
     build_registration_options(
       RegistrationFixture(
         ..default_registration_fixture(),
@@ -266,22 +296,20 @@ pub fn decode_registration_options_unknown_requirement_test() {
       ),
     )
 
-  let assert Error(_) =
-    decode.run(to_dynamic(json), glasskey.registration_options_decoder())
+  let assert Error(_) = decode.run(dyn, glasskey.registration_options_decoder())
 }
 
 pub fn decode_registration_options_unknown_algorithm_test() {
-  let json =
+  let dyn =
     build_registration_options(
       RegistrationFixture(..default_registration_fixture(), algorithms: [-999]),
     )
 
-  let assert Error(_) =
-    decode.run(to_dynamic(json), glasskey.registration_options_decoder())
+  let assert Error(_) = decode.run(dyn, glasskey.registration_options_decoder())
 }
 
 pub fn decode_registration_options_unknown_attestation_test() {
-  let json =
+  let dyn =
     build_registration_options(
       RegistrationFixture(
         ..default_registration_fixture(),
@@ -289,12 +317,11 @@ pub fn decode_registration_options_unknown_attestation_test() {
       ),
     )
 
-  let assert Error(_) =
-    decode.run(to_dynamic(json), glasskey.registration_options_decoder())
+  let assert Error(_) = decode.run(dyn, glasskey.registration_options_decoder())
 }
 
 pub fn decode_registration_options_unknown_authenticator_attachment_test() {
-  let json =
+  let dyn =
     build_registration_options(
       RegistrationFixture(
         ..default_registration_fixture(),
@@ -302,22 +329,20 @@ pub fn decode_registration_options_unknown_authenticator_attachment_test() {
       ),
     )
 
-  let assert Error(_) =
-    decode.run(to_dynamic(json), glasskey.registration_options_decoder())
+  let assert Error(_) = decode.run(dyn, glasskey.registration_options_decoder())
 }
 
 pub fn decode_authentication_options_test() {
-  let json =
-    json.object([
-      #("challenge", json.string("dGVzdC1jaGFsbGVuZ2U")),
-      #("rpId", json.string("example.com")),
-      #("timeout", json.int(60_000)),
-      #("userVerification", json.string("preferred")),
+  let dyn =
+    dynamic.properties([
+      #(dynamic.string("challenge"), dynamic.string("dGVzdC1jaGFsbGVuZ2U")),
+      #(dynamic.string("rpId"), dynamic.string("example.com")),
+      #(dynamic.string("timeout"), dynamic.int(60_000)),
+      #(dynamic.string("userVerification"), dynamic.string("preferred")),
     ])
-    |> json.to_string
 
   let assert Ok(opt) =
-    decode.run(to_dynamic(json), glasskey.authentication_options_decoder())
+    decode.run(dyn, glasskey.authentication_options_decoder())
 
   assert opt.challenge == <<"test-challenge":utf8>>
   assert opt.rp_id == option.Some("example.com")
@@ -327,38 +352,38 @@ pub fn decode_authentication_options_test() {
 }
 
 pub fn decode_authentication_options_with_allow_credentials_test() {
-  let json =
-    json.object([
-      #("challenge", json.string("dGVzdA")),
-      #("rpId", json.string("example.com")),
-      #("timeout", json.int(60_000)),
-      #("userVerification", json.string("required")),
+  let dyn =
+    dynamic.properties([
+      #(dynamic.string("challenge"), dynamic.string("dGVzdA")),
+      #(dynamic.string("rpId"), dynamic.string("example.com")),
+      #(dynamic.string("timeout"), dynamic.int(60_000)),
+      #(dynamic.string("userVerification"), dynamic.string("required")),
       #(
-        "allowCredentials",
-        json.preprocessed_array([
-          json.object([
-            #("id", json.string("AQID")),
-            #("type", json.string("public-key")),
+        dynamic.string("allowCredentials"),
+        dynamic.array([
+          dynamic.properties([
+            #(dynamic.string("id"), dynamic.string("AQID")),
+            #(dynamic.string("type"), dynamic.string("public-key")),
           ]),
         ]),
       ),
     ])
-    |> json.to_string
 
   let assert Ok(opt) =
-    decode.run(to_dynamic(json), glasskey.authentication_options_decoder())
+    decode.run(dyn, glasskey.authentication_options_decoder())
 
   assert opt.allow_credentials == [<<1, 2, 3>>]
   assert opt.user_verification == glasskey.Required
 }
 
 pub fn decode_authentication_options_minimal_test() {
-  let json =
-    json.object([#("challenge", json.string("dGVzdA"))])
-    |> json.to_string
+  let dyn =
+    dynamic.properties([
+      #(dynamic.string("challenge"), dynamic.string("dGVzdA")),
+    ])
 
   let assert Ok(opt) =
-    decode.run(to_dynamic(json), glasskey.authentication_options_decoder())
+    decode.run(dyn, glasskey.authentication_options_decoder())
 
   assert opt.challenge == <<"test":utf8>>
   assert opt.rp_id == option.None
@@ -369,18 +394,29 @@ pub fn decode_authentication_options_minimal_test() {
 
 pub fn decode_authentication_options_missing_required_fields_test() {
   let assert Error(_) =
-    decode.run(to_dynamic("{}"), glasskey.authentication_options_decoder())
+    decode.run(
+      dynamic.properties([]),
+      glasskey.authentication_options_decoder(),
+    )
 }
 
 pub fn decode_authentication_options_unknown_user_verification_test() {
-  let json =
-    json.object([
-      #("challenge", json.string("dGVzdA")),
-      #("userVerification", json.string("bogus-value")),
+  let dyn =
+    dynamic.properties([
+      #(dynamic.string("challenge"), dynamic.string("dGVzdA")),
+      #(dynamic.string("userVerification"), dynamic.string("bogus-value")),
     ])
-    |> json.to_string
   let assert Error(_) =
-    decode.run(to_dynamic(json), glasskey.authentication_options_decoder())
+    decode.run(dyn, glasskey.authentication_options_decoder())
+}
+
+pub fn decode_authentication_options_malformed_challenge_test() {
+  let dyn =
+    dynamic.properties([
+      #(dynamic.string("challenge"), dynamic.string("not!valid$base64")),
+    ])
+  let assert Error(_) =
+    decode.run(dyn, glasskey.authentication_options_decoder())
 }
 
 pub fn encode_registration_response_test() {
@@ -498,7 +534,7 @@ pub fn decode_registration_options_roundtrip_test() {
     qcheck.string(),
   ))
   let #(challenge, user_id, rp_name, user_display_name) = inputs
-  let json_string =
+  let dyn =
     build_registration_options(
       RegistrationFixture(
         ..default_registration_fixture(),
@@ -508,8 +544,7 @@ pub fn decode_registration_options_roundtrip_test() {
         user_display_name:,
       ),
     )
-  let assert Ok(opt) =
-    decode.run(to_dynamic(json_string), glasskey.registration_options_decoder())
+  let assert Ok(opt) = decode.run(dyn, glasskey.registration_options_decoder())
   assert opt.challenge == challenge
   assert opt.user_id == user_id
   assert opt.rp_name == rp_name

@@ -89,7 +89,10 @@ fn apply_route(
 fn welcome_route(m: model.Model) -> #(model.Model, Effect(model.Msg)) {
   case m {
     model.Authenticated(..) -> #(m, effect.none())
-    _ -> #(m, modem.push(router.to_path(router.Home), None, None))
+    model.Unauthenticated(..) | model.Authenticating(..) -> #(
+      m,
+      modem.push(router.to_path(router.Home), None, None),
+    )
   }
 }
 
@@ -420,7 +423,7 @@ fn handle_login_complete(
     ),
       Ok(username)
     -> #(
-      model.Authenticated(username:, status: ""),
+      model.Authenticated(username:),
       modem.push(router.to_path(router.Welcome), None, None),
     )
     model.Unauthenticated(

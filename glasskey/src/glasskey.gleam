@@ -20,15 +20,15 @@
 //// // Registration
 //// use result <- promise.await(glasskey.start_registration(options))
 //// case result {
-////   Ok(response_json) -> // POST response_json to the server to verify
-////   Error(e) -> // Handle error
+////   Ok(response_json) -> send_to_server(response_json)
+////   Error(e) -> handle_error(e)
 //// }
 ////
 //// // Authentication
 //// use result <- promise.await(glasskey.start_authentication(options))
 //// case result {
-////   Ok(response_json) -> // POST response_json to the server to verify
-////   Error(e) -> // Handle error
+////   Ok(response_json) -> send_to_server(response_json)
+////   Error(e) -> handle_error(e)
 //// }
 //// ```
 
@@ -176,7 +176,7 @@ type CreateOptions {
     rp: Rp,
     user: User,
     pub_key_cred_params: array.Array(PubKeyCredParam),
-    timeout: Int,
+    timeout: Option(Int),
     attestation: String,
     authenticator_selection: AuthenticatorSelection,
     exclude_credentials: array.Array(CredentialDescriptor),
@@ -190,8 +190,8 @@ type CredentialDescriptor {
 type GetOptions {
   GetOptions(
     challenge: BitArray,
-    rp_id: String,
-    timeout: Int,
+    rp_id: Option(String),
+    timeout: Option(Int),
     user_verification: String,
     allow_credentials: array.Array(CredentialDescriptor),
   )
@@ -222,7 +222,7 @@ pub fn start_authentication(
     return: promise.resolve(Error(NotSupported)),
   )
 
-  get_credential(options)
+  get_credential(to_get_options(options))
   |> promise.map(result.map(_, encode_authentication_response))
 }
 
@@ -240,7 +240,8 @@ pub fn start_conditional_authentication(
 ) -> Result(ConditionalAuthentication, Error) {
   use <- bool.guard(when: !supports_webauthn(), return: Error(NotSupported))
 
-  let #(raw_promise, abort) = get_conditional_credential(options)
+  let #(raw_promise, abort) =
+    get_conditional_credential(to_get_options(options))
   let result =
     raw_promise
     |> promise.map(result.map(_, encode_authentication_response))
@@ -249,32 +250,20 @@ pub fn start_conditional_authentication(
 }
 
 @external(javascript, "./glasskey_ffi.mjs", "getConditionalCredential")
-fn do_get_conditional_credential(
+fn get_conditional_credential(
   options: GetOptions,
 ) -> #(Promise(Result(AuthenticationCredential, Error)), fn() -> Nil)
 
 @external(javascript, "./glasskey_ffi.mjs", "getCredential")
-fn do_get_credential(
+fn get_credential(
   options: GetOptions,
 ) -> Promise(Result(AuthenticationCredential, Error))
-
-fn get_conditional_credential(
-  options: AuthenticationOptions,
-) -> #(Promise(Result(AuthenticationCredential, Error)), fn() -> Nil) {
-  do_get_conditional_credential(to_get_options(options))
-}
-
-fn get_credential(
-  options: AuthenticationOptions,
-) -> Promise(Result(AuthenticationCredential, Error)) {
-  do_get_credential(to_get_options(options))
-}
 
 fn to_get_options(options: AuthenticationOptions) -> GetOptions {
   GetOptions(
     challenge: options.challenge,
-    rp_id: option.unwrap(options.rp_id, ""),
-    timeout: option.unwrap(options.timeout, 0),
+    rp_id: options.rp_id,
+    timeout: options.timeout,
     user_verification: requirement_to_string(options.user_verification),
     allow_credentials: to_credential_descriptors(options.allow_credentials),
   )
@@ -299,39 +288,20 @@ pub fn encode_authentication_response(
   credential: AuthenticationCredential,
 ) -> String {
   let user_handle_json = case credential.user_handle {
-    option.Some(handle) ->
-      json.string(bit_array.base64_url_encode(handle, False))
+    option.Some(handle) -> b64_json(handle)
     option.None -> json.null()
   }
 
   json.object([
     #("id", json.string(credential.id)),
-    #(
-      "rawId",
-      json.string(bit_array.base64_url_encode(credential.raw_id, False)),
-    ),
+    #("rawId", b64_json(credential.raw_id)),
     #("type", json.string("public-key")),
     #(
       "response",
       json.object([
-        #(
-          "clientDataJSON",
-          json.string(bit_array.base64_url_encode(
-            credential.client_data_json,
-            False,
-          )),
-        ),
-        #(
-          "authenticatorData",
-          json.string(bit_array.base64_url_encode(
-            credential.authenticator_data,
-            False,
-          )),
-        ),
-        #(
-          "signature",
-          json.string(bit_array.base64_url_encode(credential.signature, False)),
-        ),
+        #("clientDataJSON", b64_json(credential.client_data_json)),
+        #("authenticatorData", b64_json(credential.authenticator_data)),
+        #("signature", b64_json(credential.signature)),
         #("userHandle", user_handle_json),
       ]),
     ),
@@ -345,32 +315,21 @@ pub fn encode_registration_response(
 ) -> String {
   json.object([
     #("id", json.string(credential.id)),
-    #(
-      "rawId",
-      json.string(bit_array.base64_url_encode(credential.raw_id, False)),
-    ),
+    #("rawId", b64_json(credential.raw_id)),
     #("type", json.string("public-key")),
     #(
       "response",
       json.object([
-        #(
-          "clientDataJSON",
-          json.string(bit_array.base64_url_encode(
-            credential.client_data_json,
-            False,
-          )),
-        ),
-        #(
-          "attestationObject",
-          json.string(bit_array.base64_url_encode(
-            credential.attestation_object,
-            False,
-          )),
-        ),
+        #("clientDataJSON", b64_json(credential.client_data_json)),
+        #("attestationObject", b64_json(credential.attestation_object)),
       ]),
     ),
   ])
   |> json.to_string
+}
+
+fn b64_json(bytes: BitArray) -> json.Json {
+  json.string(bit_array.base64_url_encode(bytes, False))
 }
 
 /// Decoder for the `PublicKeyCredentialRequestOptionsJSON` shape produced by
@@ -428,7 +387,10 @@ pub fn registration_options_decoder() -> decode.Decoder(RegistrationOptions) {
   )
   use algorithms <- decode.field(
     "pubKeyCredParams",
-    decode.list(pub_key_cred_param_decoder()),
+    decode.list({
+      use alg <- decode.field("alg", algorithm_decoder())
+      decode.success(alg)
+    }),
   )
   use timeout <- decode.optional_field(
     "timeout",
@@ -472,11 +434,6 @@ pub fn registration_options_decoder() -> decode.Decoder(RegistrationOptions) {
     authenticator_attachment:,
     exclude_credentials:,
   ))
-}
-
-fn pub_key_cred_param_decoder() -> decode.Decoder(Algorithm) {
-  use alg <- decode.field("alg", algorithm_decoder())
-  decode.success(alg)
 }
 
 fn algorithm_decoder() -> decode.Decoder(Algorithm) {
@@ -568,14 +525,12 @@ pub fn start_registration(
     return: promise.resolve(Error(NotSupported)),
   )
 
-  create_credential(options)
+  create_credential(to_create_options(options))
   |> promise.map(result.map(_, encode_registration_response))
 }
 
-fn create_credential(
-  options: RegistrationOptions,
-) -> Promise(Result(RegistrationCredential, Error)) {
-  do_create_credential(CreateOptions(
+fn to_create_options(options: RegistrationOptions) -> CreateOptions {
+  CreateOptions(
     challenge: options.challenge,
     rp: Rp(id: options.rp_id, name: options.rp_name),
     user: User(
@@ -588,7 +543,7 @@ fn create_credential(
         PubKeyCredParam(type_: "public-key", alg: algorithm_to_cose(alg))
       }),
     ),
-    timeout: option.unwrap(options.timeout, 0),
+    timeout: options.timeout,
     attestation: attestation_to_string(options.attestation),
     authenticator_selection: AuthenticatorSelection(
       resident_key: requirement_to_string(options.resident_key),
@@ -599,11 +554,11 @@ fn create_credential(
       ),
     ),
     exclude_credentials: to_credential_descriptors(options.exclude_credentials),
-  ))
+  )
 }
 
 @external(javascript, "./glasskey_ffi.mjs", "createCredential")
-fn do_create_credential(
+fn create_credential(
   options: CreateOptions,
 ) -> Promise(Result(RegistrationCredential, Error))
 

@@ -16,7 +16,7 @@ pub fn root(m: model.Model) -> Element(model.Msg) {
         not_found(uri)
       model.Authenticating(username:, stage:, status:) ->
         register(username, stage, status)
-      model.Authenticated(username:, ..) -> welcome(username)
+      model.Authenticated(username:) -> welcome(username)
     },
   ])
 }
@@ -67,8 +67,8 @@ fn is_login_loading(stage: model.LoginStage) -> Bool {
     model.LoginConditional(..) -> False
     model.LoginReady -> False
     model.LoginModalBeginning -> True
-    model.LoginModalAwaiting(..) -> True
-    model.LoginVerifying(..) -> True
+    model.LoginModalAwaiting -> True
+    model.LoginVerifying -> True
   }
 }
 
@@ -105,8 +105,8 @@ fn is_register_loading(stage: model.RegisterStage) -> Bool {
   case stage {
     model.RegisterIdle -> False
     model.RegisterBeginning -> True
-    model.RegisterAwaitingAuthenticator(..) -> True
-    model.RegisterVerifying(..) -> True
+    model.RegisterAwaitingAuthenticator -> True
+    model.RegisterVerifying -> True
   }
 }
 

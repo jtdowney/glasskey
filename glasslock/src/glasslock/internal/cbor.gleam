@@ -25,11 +25,11 @@ pub fn decode(data: BitArray) -> Result(#(Cbor, BitArray), glasslock.Error) {
 }
 
 pub fn decode_all(data: BitArray) -> Result(Cbor, glasslock.Error) {
-  case decode(data) {
-    Ok(#(value, <<>>)) -> Ok(value)
-    Ok(_) ->
+  use #(value, rest) <- result.try(decode(data))
+  case rest {
+    <<>> -> Ok(value)
+    _ ->
       Error(glasslock.ParseError("Unexpected trailing bytes after CBOR value"))
-    Error(e) -> Error(e)
   }
 }
 

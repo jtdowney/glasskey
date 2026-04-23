@@ -1,10 +1,11 @@
 import glasslock
 import glasslock/internal/cbor
+import gleam/bit_array
 import gleam/list
 import qcheck
 
-fn cose_key_bytes() -> BitArray {
-  <<
+pub fn decode_cose_key_map_test() {
+  let cose_key_bytes = <<
     // CBOR map with 5 entries: A5
     0xA5,
     // Key 1 (kty): 01 -> Value 2 (EC2): 02
@@ -22,10 +23,7 @@ fn cose_key_bytes() -> BitArray {
     0x2B, 0x2C, 0x2D, 0x2E, 0x2F, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37,
     0x38, 0x39, 0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F, 0x40,
   >>
-}
-
-pub fn decode_cose_key_map_test() {
-  let assert Ok(result) = cbor.decode_all(cose_key_bytes())
+  let assert Ok(result) = cbor.decode_all(cose_key_bytes)
   let assert cbor.Map(entries) = result
 
   assert list.length(entries) == 5
@@ -73,6 +71,10 @@ pub fn decode_negative_integers_test() {
   let assert Ok(cbor.Int(-24)) = cbor.decode_all(<<0x37>>)
   let assert Ok(cbor.Int(-25)) = cbor.decode_all(<<0x38, 0x18>>)
   let assert Ok(cbor.Int(-257)) = cbor.decode_all(<<0x39, 0x01, 0x00>>)
+  let assert Ok(cbor.Int(-4_294_967_296)) =
+    cbor.decode_all(<<0x3A, 0xFF, 0xFF, 0xFF, 0xFF>>)
+  let assert Ok(cbor.Int(-4_294_967_297)) =
+    cbor.decode_all(<<0x3B, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00>>)
 }
 
 pub fn decode_text_string_test() {
@@ -94,6 +96,8 @@ pub fn decode_unsigned_integers_test() {
   let assert Ok(cbor.Int(256)) = cbor.decode_all(<<0x19, 0x01, 0x00>>)
   let assert Ok(cbor.Int(65_536)) =
     cbor.decode_all(<<0x1A, 0x00, 0x01, 0x00, 0x00>>)
+  let assert Ok(cbor.Int(4_294_967_296)) =
+    cbor.decode_all(<<0x1B, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00>>)
 }
 
 pub fn decode_empty_map_test() {
@@ -137,6 +141,35 @@ pub fn encode_decode_round_trip_integers_test() {
   assert decoded == value
 }
 
+pub fn encode_decode_round_trip_integer_boundaries_test() {
+  let boundaries = [
+    0,
+    23,
+    24,
+    255,
+    256,
+    65_535,
+    65_536,
+    4_294_967_295,
+    4_294_967_296,
+    -1,
+    -24,
+    -25,
+    -256,
+    -257,
+    -65_536,
+    -65_537,
+    -4_294_967_296,
+    -4_294_967_297,
+  ]
+
+  list.each(boundaries, fn(n) {
+    let value = cbor.Int(n)
+    let assert Ok(decoded) = cbor.decode_all(cbor.encode(value))
+    assert decoded == value
+  })
+}
+
 pub fn encode_decode_round_trip_bytes_test() {
   use bytes <- qcheck.given(qcheck.byte_aligned_bit_array())
   let value = cbor.Bytes(bytes)
@@ -149,6 +182,23 @@ pub fn encode_decode_round_trip_strings_test() {
   let value = cbor.String(s)
   let assert Ok(decoded) = cbor.decode_all(cbor.encode(value))
   assert decoded == value
+}
+
+pub fn encode_decode_round_trip_maps_test() {
+  use pairs <- qcheck.given(
+    qcheck.list_from(qcheck.tuple2(qcheck.uniform_int(), qcheck.uniform_int())),
+  )
+  let entries =
+    list.map(pairs, fn(pair) {
+      let #(k, v) = pair
+      #(cbor.Int(k), cbor.Int(v))
+    })
+  let assert Ok(decoded) = cbor.decode_all(cbor.encode(cbor.Map(entries)))
+  let sorted_input =
+    list.sort(entries, fn(a, b) {
+      bit_array.compare(cbor.encode(a.0), cbor.encode(b.0))
+    })
+  assert decoded == cbor.Map(sorted_input)
 }
 
 pub fn encode_empty_map_produces_expected_bytes_test() {

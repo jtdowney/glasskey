@@ -177,7 +177,7 @@ fn decode_pending(raw: String) -> Result(PendingRegistration, Nil) {
   )
   use user_id <- result.try(bit_array.base64_url_decode(user_id_b64))
   use challenge <- result.try(
-    registration.parse_challenge(encoded: challenge_encoded)
+    registration.parse_challenge(challenge_encoded)
     |> result.replace_error(Nil),
   )
   Ok(PendingRegistration(username:, user_id:, challenge:))

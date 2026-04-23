@@ -1,5 +1,4 @@
 import glasslock
-import glasslock/authentication
 import glasslock/internal
 import glasslock/internal/cbor
 import glasslock/testing
@@ -12,60 +11,25 @@ import kryptos/crypto
 import kryptos/hash
 import qcheck
 
-fn test_config() -> qcheck.Config {
-  qcheck.default_config()
-  |> qcheck.with_test_count(100)
-}
+pub fn sign_verify_round_trip_test() {
+  let generators = [
+    testing.generate_es256_keypair,
+    testing.generate_ed25519_keypair,
+    testing.generate_rs256_keypair,
+  ]
+  let config = qcheck.default_config() |> qcheck.with_test_count(100)
 
-pub fn sign_verify_round_trip_es256_test() {
-  let keypair = testing.generate_es256_keypair()
-  let glasslock.PublicKey(public_key_cbor) = testing.public_key(keypair)
-  let assert Ok(#(parsed_key, alg)) = internal.parse_public_key(public_key_cbor)
-  test_config()
-  |> qcheck.run(qcheck.fixed_size_byte_aligned_bit_array(64), fn(message) {
+  list.each(generators, fn(generate) {
+    let keypair = generate()
+    let glasslock.PublicKey(public_key_cbor) = testing.public_key(keypair)
+    let assert Ok(#(parsed_key, alg)) =
+      internal.parse_public_key(public_key_cbor)
+    use message <- qcheck.run(
+      config,
+      qcheck.fixed_size_byte_aligned_bit_array(64),
+    )
     let signature = testing.sign(keypair:, message:)
-    assert internal.verify_signature(
-        key: parsed_key,
-        alg:,
-        message:,
-        signature:,
-      )
-      == Ok(Nil)
-    Nil
-  })
-}
-
-pub fn sign_verify_round_trip_ed25519_test() {
-  let keypair = testing.generate_ed25519_keypair()
-  let glasslock.PublicKey(public_key_cbor) = testing.public_key(keypair)
-  let assert Ok(#(parsed_key, alg)) = internal.parse_public_key(public_key_cbor)
-  test_config()
-  |> qcheck.run(qcheck.fixed_size_byte_aligned_bit_array(64), fn(message) {
-    let signature = testing.sign(keypair:, message:)
-    assert internal.verify_signature(
-        key: parsed_key,
-        alg:,
-        message:,
-        signature:,
-      )
-      == Ok(Nil)
-    Nil
-  })
-}
-
-pub fn sign_verify_round_trip_rs256_test() {
-  let keypair = testing.generate_rs256_keypair()
-  let glasslock.PublicKey(public_key_cbor) = testing.public_key(keypair)
-  let assert Ok(#(parsed_key, alg)) = internal.parse_public_key(public_key_cbor)
-  test_config()
-  |> qcheck.run(qcheck.fixed_size_byte_aligned_bit_array(64), fn(message) {
-    let signature = testing.sign(keypair:, message:)
-    assert internal.verify_signature(
-        key: parsed_key,
-        alg:,
-        message:,
-        signature:,
-      )
+    assert internal.verify_signature(parsed_key, alg:, message:, signature:)
       == Ok(Nil)
     Nil
   })
@@ -288,68 +252,6 @@ pub fn parse_registration_auth_data_ignores_extensions_test() {
     internal.parse_public_key(ad.attested_credential.public_key_cbor)
 }
 
-pub fn sign_count_monotonicity_test() {
-  test_config()
-  |> qcheck.run(
-    qcheck.tuple2(
-      qcheck.bounded_int(1, 1_000_000),
-      qcheck.bounded_int(1, 1_000_000),
-    ),
-    fn(inputs) {
-      let #(stored, new) = inputs
-      let keypair = testing.generate_es256_keypair()
-      let credential_id = crypto.random_bytes(16)
-      let public_key = testing.public_key(keypair)
-      let stored_cred =
-        glasslock.Credential(
-          id: glasslock.CredentialId(credential_id),
-          public_key: public_key,
-          sign_count: stored,
-        )
-
-      let #(_, challenge) =
-        authentication.request(
-          relying_party_id: "example.com",
-          origins: ["https://example.com"],
-          options: authentication.Options(
-            ..authentication.default_options(),
-            allow_credentials: [glasslock.CredentialId(credential_id)],
-          ),
-        )
-      let response =
-        testing.build_authentication_response(
-          challenge: challenge,
-          keypair: keypair,
-          sign_count: new,
-        )
-      let response_json =
-        testing.to_authentication_json(
-          response,
-          credential_id: glasslock.CredentialId(credential_id),
-          user_handle: option.None,
-        )
-
-      let result =
-        authentication.verify(
-          response_json: response_json,
-          challenge: challenge,
-          stored: stored_cred,
-        )
-
-      case new > stored {
-        True -> {
-          let assert Ok(_) = result
-          Nil
-        }
-        False -> {
-          assert result == Error(glasslock.SignCountRegression)
-          Nil
-        }
-      }
-    },
-  )
-}
-
 pub fn verify_client_data_accepts_valid_test() {
   let challenge = <<1, 2, 3, 4>>
   let cd =
@@ -361,7 +263,7 @@ pub fn verify_client_data_accepts_valid_test() {
       top_origin: option.None,
     )
   assert internal.verify_client_data(
-      client_data: cd,
+      cd,
       expected_type: "webauthn.create",
       expected_challenge: challenge,
       expected_origins: set.from_list(["https://example.com"]),
@@ -382,7 +284,7 @@ pub fn verify_client_data_rejects_empty_origins_test() {
       top_origin: option.None,
     )
   assert internal.verify_client_data(
-      client_data: cd,
+      cd,
       expected_type: "webauthn.create",
       expected_challenge: challenge,
       expected_origins: set.from_list([]),
@@ -405,7 +307,7 @@ pub fn verify_client_data_rejects_wrong_type_test() {
       top_origin: option.None,
     )
   assert internal.verify_client_data(
-      client_data: cd,
+      cd,
       expected_type: "webauthn.create",
       expected_challenge: challenge,
       expected_origins: set.from_list(["https://example.com"]),
@@ -425,7 +327,7 @@ pub fn verify_client_data_rejects_wrong_challenge_test() {
       top_origin: option.None,
     )
   assert internal.verify_client_data(
-      client_data: cd,
+      cd,
       expected_type: "webauthn.create",
       expected_challenge: <<9, 9, 9, 9>>,
       expected_origins: set.from_list(["https://example.com"]),
@@ -446,7 +348,7 @@ pub fn verify_client_data_rejects_wrong_origin_test() {
       top_origin: option.None,
     )
   assert internal.verify_client_data(
-      client_data: cd,
+      cd,
       expected_type: "webauthn.create",
       expected_challenge: challenge,
       expected_origins: set.from_list(["https://example.com"]),
@@ -467,7 +369,7 @@ pub fn verify_client_data_rejects_cross_origin_test() {
       top_origin: option.None,
     )
   assert internal.verify_client_data(
-      client_data: cd,
+      cd,
       expected_type: "webauthn.create",
       expected_challenge: challenge,
       expected_origins: set.from_list(["https://example.com"]),
@@ -488,7 +390,7 @@ pub fn verify_client_data_allows_cross_origin_when_permitted_test() {
       top_origin: option.None,
     )
   assert internal.verify_client_data(
-      client_data: cd,
+      cd,
       expected_type: "webauthn.create",
       expected_challenge: challenge,
       expected_origins: set.from_list(["https://example.com"]),
@@ -657,7 +559,7 @@ pub fn parse_registration_auth_data_rejects_truncated_credential_test() {
 
 pub fn verify_attestation_rejects_non_empty_statement_test() {
   let non_empty = cbor.Map([#(cbor.String("alg"), cbor.Int(-7))])
-  assert internal.verify_attestation(internal.FormatNone, non_empty)
+  assert internal.verify_attestation(non_empty)
     == Error(glasslock.InvalidAttestation(
       "none attestation with non-empty statement",
     ))
@@ -787,7 +689,7 @@ pub fn verify_client_data_accepts_allowed_top_origin_test() {
       top_origin: option.Some("https://example.com"),
     )
   assert internal.verify_client_data(
-      client_data: cd,
+      cd,
       expected_type: "webauthn.create",
       expected_challenge: challenge,
       expected_origins: set.from_list(["https://sub.example.com"]),
@@ -808,7 +710,7 @@ pub fn verify_client_data_rejects_unknown_top_origin_test() {
       top_origin: option.Some("https://evil.com"),
     )
   assert internal.verify_client_data(
-      client_data: cd,
+      cd,
       expected_type: "webauthn.create",
       expected_challenge: challenge,
       expected_origins: set.from_list(["https://sub.example.com"]),
@@ -829,7 +731,7 @@ pub fn verify_client_data_rejects_missing_top_origin_with_allowlist_test() {
       top_origin: option.None,
     )
   assert internal.verify_client_data(
-      client_data: cd,
+      cd,
       expected_type: "webauthn.create",
       expected_challenge: challenge,
       expected_origins: set.from_list(["https://sub.example.com"]),
@@ -850,7 +752,7 @@ pub fn verify_client_data_rejects_top_origin_with_empty_allowlist_test() {
       top_origin: option.Some("https://example.com"),
     )
   assert internal.verify_client_data(
-      client_data: cd,
+      cd,
       expected_type: "webauthn.create",
       expected_challenge: challenge,
       expected_origins: set.from_list(["https://sub.example.com"]),

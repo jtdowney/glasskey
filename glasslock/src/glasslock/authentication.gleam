@@ -137,19 +137,22 @@ pub fn encode_challenge(challenge: Challenge) -> String {
   [
     #("v", json.int(1)),
     #("kind", json.string("authentication")),
+    #("allow_credentials", allow_credentials),
     ..internal.encode_challenge_data_fields(challenge.data)
   ]
-  |> list.append([#("allow_credentials", allow_credentials)])
   |> json.object
   |> json.to_string
+}
+
+@internal
+pub fn challenge_data(challenge: Challenge) -> internal.ChallengeData {
+  challenge.data
 }
 
 /// Decode a previously-encoded authentication challenge. Returns a
 /// `ParseError` if the blob is malformed, encodes a registration challenge,
 /// or uses an unsupported format version.
-pub fn parse_challenge(
-  encoded encoded: String,
-) -> Result(Challenge, glasslock.Error) {
+pub fn parse_challenge(encoded: String) -> Result(Challenge, glasslock.Error) {
   let decoder = {
     use ids <- decode.optional_field(
       "allow_credentials",
@@ -311,7 +314,7 @@ pub fn verify(
 
   use client_data <- result.try(internal.parse_client_data(client_data_json))
   use _ <- result.try(internal.verify_client_data(
-    client_data:,
+    client_data,
     expected_type: "webauthn.get",
     expected_challenge: challenge.data.bytes,
     expected_origins: challenge.data.origins,
@@ -345,7 +348,7 @@ pub fn verify(
     public_key_cbor,
   ))
   use _ <- result.try(internal.verify_signature(
-    key: parsed_key,
+    parsed_key,
     alg:,
     message: signed_data,
     signature:,
@@ -370,30 +373,23 @@ pub fn verify(
 fn parse_response_json(
   json_string: String,
 ) -> Result(ParsedResponse, glasslock.Error) {
-  let response_decoder = {
-    use client_data_json <- decode.field("clientDataJSON", decode.string)
-    use authenticator_data <- decode.field("authenticatorData", decode.string)
-    use signature <- decode.field("signature", decode.string)
-    use user_handle <- decode.optional_field(
-      "userHandle",
-      option.None,
-      decode.optional(decode.string),
-    )
-    decode.success(#(
-      client_data_json,
-      authenticator_data,
-      signature,
-      user_handle,
-    ))
-  }
-
   let decoder = {
     use raw_id <- decode.field("rawId", decode.string)
     use credential_type <- decode.field("type", decode.string)
-    use #(client_data_json, authenticator_data, signature, user_handle) <- decode.field(
-      "response",
-      response_decoder,
+    use client_data_json <- decode.subfield(
+      ["response", "clientDataJSON"],
+      decode.string,
     )
+    use authenticator_data <- decode.subfield(
+      ["response", "authenticatorData"],
+      decode.string,
+    )
+    use signature <- decode.subfield(["response", "signature"], decode.string)
+    use user_handle <- decode.then(decode.optionally_at(
+      ["response", "userHandle"],
+      option.None,
+      decode.optional(decode.string),
+    ))
     decode.success(ParsedResponse(
       raw_id:,
       credential_type:,

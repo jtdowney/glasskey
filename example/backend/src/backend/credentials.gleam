@@ -25,7 +25,7 @@ pub type User {
   )
 }
 
-const transaction_timeout = 5000
+const trove_timeout = 5000
 
 pub fn open(storage_path: String) -> Result(Store, trove.OpenError) {
   let config =
@@ -36,7 +36,7 @@ pub fn open(storage_path: String) -> Result(Store, trove.OpenError) {
       key_compare: string.compare,
       auto_compact: trove.AutoCompact(min_dirt: 1000, min_dirt_factor: 0.25),
       auto_file_sync: trove.AutoSync,
-      call_timeout: 5000,
+      call_timeout: trove_timeout,
     )
   use db <- result.try(trove.open(config))
   let users =
@@ -79,29 +79,23 @@ pub fn get_user_by_credential_id(
   store: Store,
   credential_id: BitArray,
 ) -> Result(User, Nil) {
-  case
-    trove.get_in(
-      store.db,
-      keyspace: store.credential_index,
-      key: bit_array.base64_url_encode(credential_id, False),
-    )
-  {
-    Ok(username) -> get_user(store, username)
-    Error(_) -> Error(Nil)
-  }
+  trove.get_in(
+    store.db,
+    keyspace: store.credential_index,
+    key: bit_array.base64_url_encode(credential_id, False),
+  )
+  |> result.replace_error(Nil)
+  |> result.try(get_user(store, _))
 }
 
 pub fn get_user_by_user_id(store: Store, user_id: BitArray) -> Result(User, Nil) {
-  case
-    trove.get_in(
-      store.db,
-      keyspace: store.user_id_index,
-      key: bit_array.base64_url_encode(user_id, False),
-    )
-  {
-    Ok(username) -> get_user(store, username)
-    Error(_) -> Error(Nil)
-  }
+  trove.get_in(
+    store.db,
+    keyspace: store.user_id_index,
+    key: bit_array.base64_url_encode(user_id, False),
+  )
+  |> result.replace_error(Nil)
+  |> result.try(get_user(store, _))
 }
 
 pub fn save(
@@ -114,7 +108,7 @@ pub fn save(
   let cred_key = bit_array.base64_url_encode(raw_credential_id, False)
   let uid_key = bit_array.base64_url_encode(user_id, False)
 
-  trove.transaction(store.db, timeout: transaction_timeout, callback: fn(tx) {
+  trove.transaction(store.db, timeout: trove_timeout, callback: fn(tx) {
     let user = case trove.tx_get_in(tx, keyspace: store.users, key: username) {
       Ok(existing) ->
         User(..existing, credentials: [credential, ..existing.credentials])
