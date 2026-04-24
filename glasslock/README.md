@@ -20,7 +20,7 @@ gleam add glasslock
 Both builders return `#(options_json, challenge)`. Send `options_json` to the browser and retain `challenge` until the response arrives. Keep the challenge in memory on one node. To move it between processes or nodes, use the module's `encode_challenge` and `parse_challenge` functions.
 
 // 1. Generate options to send to the browser
-let #(options_json, challenge) =
+let assert Ok(#(options_json, challenge)) =
   registration.request(
     relying_party: registration.RelyingParty(id: "example.com", name: "My App"),
     user: registration.User(id: user_id, name: username, display_name: username),
