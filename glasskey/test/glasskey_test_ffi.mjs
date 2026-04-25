@@ -199,8 +199,10 @@ export function setGetDomException(name, message) {
 }
 
 function challengeBitArray(value) {
-  if (value instanceof ArrayBuffer) return BitArray$BitArray(new Uint8Array(value));
-  if (ArrayBuffer.isView(value)) return BitArray$BitArray(new Uint8Array(value.buffer));
+  if (value instanceof ArrayBuffer)
+    return BitArray$BitArray(new Uint8Array(value));
+  if (ArrayBuffer.isView(value))
+    return BitArray$BitArray(new Uint8Array(value.buffer));
   throw new Error("fake navigator: challenge was not a buffer");
 }
 
