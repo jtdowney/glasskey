@@ -29,7 +29,7 @@ glasslock delegates cryptographic operations to [kryptos](https://github.com/jtd
 
 On Erlang, `glasslock` requires OTP 27 or newer with current OpenSSL or LibreSSL libraries. On Node.js, use a supported LTS release.
 
-After each authentication, glasslock compares the authenticator's reported sign count against the stored value. A sign count that decreases (or drops to zero after previously being nonzero) returns a `SignCountRegression` error, indicating a possible cloned authenticator.
+After each authentication, glasslock compares the authenticator's reported sign count against the stored value. If the stored count is nonzero, the new count must be strictly greater than the stored count. A new count that is zero, less than the stored count, or equal to the stored count returns a `SignCountRegression` error, indicating a possible cloned authenticator.
 
 ## Supported Algorithms
 
