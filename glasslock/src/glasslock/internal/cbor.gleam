@@ -1,7 +1,6 @@
 //// Minimal CBOR codec: ints, bytes, strings, maps. Covers only the
 //// subset WebAuthn attestation and COSE keys need.
 
-import glasslock
 import gleam/bit_array
 import gleam/int
 import gleam/list
@@ -14,110 +13,106 @@ pub type Cbor {
   Map(List(#(Cbor, Cbor)))
 }
 
-pub fn decode(data: BitArray) -> Result(#(Cbor, BitArray), glasslock.Error) {
-  case data {
-    <<major:3, info:5, rest:bytes>> -> {
-      use #(argument, rest) <- result.try(decode_argument(info, rest))
-      decode_value(major, argument, rest)
-    }
-    _ -> Error(glasslock.ParseError("Unexpected end of CBOR input"))
+const max_nesting_depth = 16
+
+const max_map_entries = 256
+
+pub fn decode(data: BitArray) -> Result(#(Cbor, BitArray), String) {
+  decode_at_depth(data, 0)
+}
+
+fn decode_at_depth(
+  data: BitArray,
+  depth: Int,
+) -> Result(#(Cbor, BitArray), String) {
+  case depth > max_nesting_depth {
+    True -> Error("CBOR nesting depth exceeds 16")
+    False ->
+      case data {
+        <<major:3, info:5, rest:bytes>> -> {
+          use #(argument, rest) <- result.try(decode_argument(info, rest))
+          decode_value(major, argument, rest, depth)
+        }
+        _ -> Error("Unexpected end of CBOR input")
+      }
   }
 }
 
-pub fn decode_all(data: BitArray) -> Result(Cbor, glasslock.Error) {
+pub fn decode_all(data: BitArray) -> Result(Cbor, String) {
   use #(value, rest) <- result.try(decode(data))
   case rest {
     <<>> -> Ok(value)
-    _ ->
-      Error(glasslock.ParseError("Unexpected trailing bytes after CBOR value"))
+    _ -> Error("Unexpected trailing bytes after CBOR value")
   }
 }
 
 fn decode_argument(
   info: Int,
   rest: BitArray,
-) -> Result(#(Int, BitArray), glasslock.Error) {
+) -> Result(#(Int, BitArray), String) {
   case info {
     n if n < 24 -> Ok(#(n, rest))
     24 ->
       case rest {
         <<value, remaining:bytes>> -> Ok(#(value, remaining))
-        _ ->
-          Error(glasslock.ParseError("Truncated CBOR: expected 1 byte argument"))
+        _ -> Error("Truncated CBOR: expected 1 byte argument")
       }
     25 ->
       case rest {
         <<value:16-big-unsigned, remaining:bytes>> -> Ok(#(value, remaining))
-        _ ->
-          Error(glasslock.ParseError("Truncated CBOR: expected 2 byte argument"))
+        _ -> Error("Truncated CBOR: expected 2 byte argument")
       }
     26 ->
       case rest {
         <<value:32-big-unsigned, remaining:bytes>> -> Ok(#(value, remaining))
-        _ ->
-          Error(glasslock.ParseError("Truncated CBOR: expected 4 byte argument"))
+        _ -> Error("Truncated CBOR: expected 4 byte argument")
       }
     27 ->
       case rest {
         <<value:64-big-unsigned, remaining:bytes>> -> Ok(#(value, remaining))
-        _ ->
-          Error(glasslock.ParseError("Truncated CBOR: expected 8 byte argument"))
+        _ -> Error("Truncated CBOR: expected 8 byte argument")
       }
-    _ ->
-      Error(glasslock.ParseError(
-        "Unsupported CBOR additional info: " <> int.to_string(info),
-      ))
+    _ -> Error("Unsupported CBOR additional info: " <> int.to_string(info))
   }
 }
 
 fn decode_bytes(
   length: Int,
   rest: BitArray,
-) -> Result(#(Cbor, BitArray), glasslock.Error) {
+) -> Result(#(Cbor, BitArray), String) {
   case rest {
     <<bytes:bytes-size(length), remaining:bytes>> ->
       Ok(#(Bytes(bytes), remaining))
-    _ -> Error(glasslock.ParseError("Truncated CBOR byte string"))
+    _ -> Error("Truncated CBOR byte string")
   }
-}
-
-fn decode_map(
-  count: Int,
-  rest: BitArray,
-) -> Result(#(Cbor, BitArray), glasslock.Error) {
-  decode_map_entries(count, rest, [])
 }
 
 fn decode_map_entries(
   remaining: Int,
   data: BitArray,
   acc: List(#(Cbor, Cbor)),
-) -> Result(#(Cbor, BitArray), glasslock.Error) {
+  depth: Int,
+) -> Result(#(Cbor, BitArray), String) {
   case remaining {
     0 -> Ok(#(Map(list.reverse(acc)), data))
     _ -> {
-      use #(key, rest) <- result.try(decode(data))
-      use #(value, rest) <- result.try(decode(rest))
-      decode_map_entries(remaining - 1, rest, [#(key, value), ..acc])
+      use #(key, rest) <- result.try(decode_at_depth(data, depth + 1))
+      use #(value, rest) <- result.try(decode_at_depth(rest, depth + 1))
+      decode_map_entries(remaining - 1, rest, [#(key, value), ..acc], depth)
     }
   }
 }
 
-fn decode_text(
-  length: Int,
-  rest: BitArray,
-) -> Result(#(Cbor, BitArray), glasslock.Error) {
+fn decode_text(length: Int, rest: BitArray) -> Result(#(Cbor, BitArray), String) {
   case rest {
     <<bytes:bytes-size(length), remaining:bytes>> -> {
       use text <- result.try(
         bit_array.to_string(bytes)
-        |> result.replace_error(glasslock.ParseError(
-          "Invalid UTF-8 in CBOR text string",
-        )),
+        |> result.replace_error("Invalid UTF-8 in CBOR text string"),
       )
       Ok(#(String(text), remaining))
     }
-    _ -> Error(glasslock.ParseError("Truncated CBOR text string"))
+    _ -> Error("Truncated CBOR text string")
   }
 }
 
@@ -125,17 +120,16 @@ fn decode_value(
   major: Int,
   argument: Int,
   rest: BitArray,
-) -> Result(#(Cbor, BitArray), glasslock.Error) {
+  depth: Int,
+) -> Result(#(Cbor, BitArray), String) {
   case major {
     0 -> Ok(#(Int(argument), rest))
     1 -> Ok(#(Int(-1 - argument), rest))
     2 -> decode_bytes(argument, rest)
     3 -> decode_text(argument, rest)
-    5 -> decode_map(argument, rest)
-    _ ->
-      Error(glasslock.ParseError(
-        "Unsupported CBOR major type: " <> int.to_string(major),
-      ))
+    5 if argument > max_map_entries -> Error("CBOR map exceeds 256 entries")
+    5 -> decode_map_entries(argument, rest, [], depth)
+    _ -> Error("Unsupported CBOR major type: " <> int.to_string(major))
   }
 }
 
