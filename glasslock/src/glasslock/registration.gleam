@@ -200,9 +200,12 @@ pub fn challenge_data(challenge: Challenge) -> internal.ChallengeData {
   challenge.data
 }
 
-/// Decode a previously-encoded registration challenge. Returns a
-/// `ParseError` if the blob is malformed, encodes an authentication
-/// challenge, or uses an unsupported format version.
+@internal
+pub fn challenge_algorithms(challenge: Challenge) -> List(Algorithm) {
+  challenge.algorithms
+}
+
+/// Decode a previously-encoded registration challenge.
 pub fn parse_challenge(encoded: String) -> Result(Challenge, Error) {
   let decoder = {
     use algs <- decode.optional_field("algorithms", [], decode.list(decode.int))
