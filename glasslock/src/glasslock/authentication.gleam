@@ -183,11 +183,7 @@ pub fn challenge_allowed_credentials(
 /// Decode a previously-encoded authentication challenge.
 pub fn parse_challenge(encoded: String) -> Result(Challenge, Error) {
   let decoder = {
-    use ids <- decode.optional_field(
-      "allow_credentials",
-      [],
-      decode.list(decode.string),
-    )
+    use ids <- decode.field("allow_credentials", decode.list(decode.string))
     decode.success(ids)
   }
 
