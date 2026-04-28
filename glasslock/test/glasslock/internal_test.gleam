@@ -270,55 +270,43 @@ pub fn verify_client_data_rejects_empty_origins_test() {
     ))
 }
 
-pub fn verify_user_policies_required_present_test() {
+pub fn verify_user_policies_present_and_verified_test() {
   assert internal.verify_user_policies(
       True,
       True,
-      glasslock.PresenceRequired,
       glasslock.VerificationRequired,
 
     )
     == Ok(Nil)
 }
 
-pub fn verify_user_policies_required_not_present_test() {
+pub fn verify_user_policies_verification_required_not_verified_test() {
   assert internal.verify_user_policies(
       True,
       False,
-      glasslock.PresenceRequired,
       glasslock.VerificationRequired,
-    )
-    == Error(internal.UserVerificationFailed)
-}
-
-pub fn verify_user_policies_preferred_always_passes_test() {
-  assert internal.verify_user_policies(
+      Error(internal.UserVerificationFailed),
+    ),
+    #(True, False, glasslock.VerificationPreferred, Ok(Nil)),
+    #(True, False, glasslock.VerificationDiscouraged, Ok(Nil)),
+    #(
+      False,
       True,
       False,
-      glasslock.PresencePreferred,
-      glasslock.VerificationPreferred,
-    )
-    == Ok(Nil)
-}
-
-pub fn verify_user_policies_discouraged_always_passes_test() {
-  assert internal.verify_user_policies(
-      True,
-      False,
-      glasslock.PresenceDiscouraged,
       glasslock.VerificationDiscouraged,
-    )
-    == Ok(Nil)
-}
+      Error(internal.UserPresenceFailed),
+    ),
+  ]
 
-pub fn verify_user_policies_presence_required_not_present_test() {
-  assert internal.verify_user_policies(
-      False,
-      False,
-      glasslock.PresenceRequired,
-      glasslock.VerificationDiscouraged,
-    )
-    == Error(internal.UserPresenceFailed)
+  list.each(cases, fn(test_case) {
+    let #(user_present, user_verified, verification, expected) = test_case
+    assert internal.verify_user_policies(
+        user_present,
+        user_verified,
+        verification,
+      )
+      == expected
+  })
 }
 
 pub fn parse_public_key_rejects_missing_kty_test() {
