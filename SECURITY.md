@@ -20,10 +20,9 @@ Include the affected package version and runtime, a minimal reproduction, the ex
 
 After authentication, `glasslock` compares the authenticator's sign counter with the stored value. When the stored value is nonzero, the new value must be greater. A zero, equal, or lower value returns `SignCountRegression` because it may indicate a cloned authenticator.
 
-- **glasslock**: server-side credential verification (Erlang and JavaScript targets)
-- **glasskey**: browser WebAuthn API bindings (JavaScript target)
+## Supported algorithms
 
-glasslock delegates cryptographic operations to [kryptos](https://github.com/jtdowney/kryptos), which wraps platform-native implementations: Erlang/OTP's `:crypto` module on BEAM, or Node.js `crypto` on JavaScript.
+`glasslock` accepts ES256 (ECDSA P-256 with SHA-256, COSE -7), Ed25519 (EdDSA, COSE -8), and RS256 (RSASSA-PKCS1-v1_5 with SHA-256, COSE -257).
 
 ## Runtime requirements
 
@@ -41,7 +40,7 @@ After each authentication, glasslock compares the authenticator's reported sign 
 
 ### glasslock
 
-On Erlang/OTP, use a currently supported OTP version with up-to-date OpenSSL/LibreSSL. On Node.js, use a currently supported LTS version. glasslock delegates cryptography to kryptos, which wraps `:crypto` on Erlang and `node:crypto` on JavaScript.
+On Erlang/OTP, use a currently supported OTP version with up-to-date OpenSSL/LibreSSL. On Node.js, use a currently supported LTS version. glasslock delegates cryptography to kryptos, which wraps `:crypto` on Erlang and `node:crypto` on Node.js.
 
 ### glasskey
 
