@@ -51,7 +51,10 @@ case glasskey.start_conditional_authentication(options) {
   Ok(glasskey.ConditionalAuthentication(result:, abort:)) -> {
     // `abort` cancels the pending ceremony
     use response <- promise.await(result)
-    todo as "send response JSON to server for verification"
+    case response {
+      Ok(response_json) -> todo as "POST response_json to server for verification"
+      Error(e) -> todo as "handle error"
+    }
   }
   Error(e) -> todo as "handle error"
 }
