@@ -614,7 +614,7 @@ pub fn verify_rejects_unknown_top_origin_test() {
     == Error(registration.VerificationMismatch(glasslock.TopOriginField))
 }
 
-pub fn verify_rejects_missing_top_origin_with_allowlist_test() {
+pub fn verify_accepts_missing_top_origin_with_allowlist_test() {
   let assert Ok(#(_, challenge)) =
     registration.request(
       relying_party: registration.RelyingParty(
@@ -638,10 +638,30 @@ pub fn verify_rejects_missing_top_origin_with_allowlist_test() {
   let client_data_json =
     testing.build_client_data(
       type_: "webauthn.create",
-      challenge: testing.registration_challenge_bytes(challenge),
+      challenge: registration.challenge_data(challenge).bytes,
       origin: "https://example.com",
       cross_origin: True,
       top_origin: option.None,
+    )
+  let response_json =
+    testing.to_registration_json(
+      testing.RegistrationResponse(..response, client_data_json:),
+    )
+
+  let assert Ok(_cred) = registration.verify(response_json:, challenge:)
+}
+
+pub fn verify_rejects_top_origin_without_cross_origin_test() {
+  let challenge = setup_challenge()
+  let response = testing.build_registration_response(challenge:)
+
+  let client_data_json =
+    testing.build_client_data(
+      type_: "webauthn.create",
+      challenge: registration.challenge_data(challenge).bytes,
+      origin: "https://example.com",
+      cross_origin: False,
+      top_origin: option.Some("https://top.example.com"),
     )
   let response_json =
     testing.to_registration_json(
