@@ -272,7 +272,7 @@ export function lastGetSnapshot() {
     GetSnapshot$GetSnapshot(
       optionalString(pk.rpId),
       optionalNumber(pk.timeout),
-      pk.userVerification,
+      optionalString(pk.userVerification),
       pk.allowCredentials?.length ?? 0,
     ),
   );
