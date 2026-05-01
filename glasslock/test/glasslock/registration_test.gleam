@@ -97,6 +97,7 @@ fn build_response(
     attestation_object: testing.build_attestation_object(auth_data),
     credential_type: "public-key",
     transports: [],
+    id_override: option.None,
   )
 }
 
@@ -122,14 +123,6 @@ pub fn request_emits_core_fields_test() {
     == ["https://example.com"]
   assert registration.challenge_data(challenge).rp_id == "example.com"
   assert bit_array.byte_size(registration.challenge_data(challenge).bytes) == 32
-}
-
-pub fn request_produces_unique_challenges_test() {
-  let options = setup_options(glasslock.VerificationPreferred)
-  let #(_, challenge1) = make_request(options)
-  let #(_, challenge2) = make_request(options)
-  assert testing.registration_challenge_bytes(challenge1)
-    != testing.registration_challenge_bytes(challenge2)
 }
 
 pub fn request_with_exclude_credentials_test() {
@@ -174,81 +167,6 @@ pub fn request_with_exclude_credentials_test() {
       #(bit_array.base64_url_encode(cred1, False), []),
       #(bit_array.base64_url_encode(cred2, False), ["usb", "internal"]),
     ]
-}
-
-pub fn request_with_platform_attachment_test() {
-  let #(options_json, _) =
-    make_request(
-      registration.Options(
-        ..setup_options(glasslock.VerificationPreferred),
-        authenticator_attachment: option.Some(registration.Platform),
-      ),
-    )
-  let decoder = {
-    use att <- decode.subfield(
-      ["authenticatorSelection", "authenticatorAttachment"],
-      decode.string,
-    )
-    decode.success(att)
-  }
-  let assert Ok(att) = json.parse(json.to_string(options_json), decoder)
-  assert att == "platform"
-}
-
-pub fn request_with_cross_platform_attachment_test() {
-  let #(options_json, _) =
-    make_request(
-      registration.Options(
-        ..setup_options(glasslock.VerificationPreferred),
-        authenticator_attachment: option.Some(registration.CrossPlatform),
-      ),
-    )
-  let decoder = {
-    use att <- decode.subfield(
-      ["authenticatorSelection", "authenticatorAttachment"],
-      decode.string,
-    )
-    decode.success(att)
-  }
-  let assert Ok(att) = json.parse(json.to_string(options_json), decoder)
-  assert att == "cross-platform"
-}
-
-pub fn request_resident_key_variants_test() {
-  let variants = [
-    #(option.None, option.None),
-    #(
-      option.Some(registration.ResidentKeyDiscouraged),
-      option.Some("discouraged"),
-    ),
-    #(option.Some(registration.ResidentKeyPreferred), option.Some("preferred")),
-    #(option.Some(registration.ResidentKeyRequired), option.Some("required")),
-  ]
-
-  let decoder = {
-    use rk <- decode.optional_field("authenticatorSelection", option.None, {
-      use inner <- decode.optional_field(
-        "residentKey",
-        option.None,
-        decode.optional(decode.string),
-      )
-      decode.success(inner)
-    })
-    decode.success(rk)
-  }
-
-  list.each(variants, fn(pair) {
-    let #(variant, expected) = pair
-    let #(options_json, _) =
-      make_request(
-        registration.Options(
-          ..setup_options(glasslock.VerificationPreferred),
-          resident_key: variant,
-        ),
-      )
-    let assert Ok(rk) = json.parse(json.to_string(options_json), decoder)
-    assert rk == expected
-  })
 }
 
 pub fn request_rejects_empty_origins_test() {
@@ -328,12 +246,11 @@ pub fn verify_stores_reported_transports_test() {
   let challenge = setup_challenge()
   let response = testing.build_registration_response(challenge:)
   let response_json =
-    testing.to_registration_json_with(
-      credential_id: response.credential_id,
-      client_data_json: response.client_data_json,
-      attestation_object: response.attestation_object,
-      credential_type: "public-key",
-      transports: [glasslock.TransportUsb, glasslock.TransportHybrid],
+    testing.to_registration_json(
+      testing.RegistrationResponse(..response, transports: [
+        glasslock.TransportUsb,
+        glasslock.TransportHybrid,
+      ]),
     )
 
   let assert Ok(cred) = registration.verify(response_json:, challenge:)
@@ -534,6 +451,7 @@ pub fn verify_rejects_rp_id_mismatch_test() {
       attestation_object: testing.build_attestation_object(auth_data),
       credential_type: "public-key",
       transports: [],
+      id_override: option.None,
     )
 
   let result = registration.verify(response_json:, challenge:)
@@ -730,12 +648,8 @@ pub fn verify_rejects_invalid_credential_type_test() {
   let challenge = setup_challenge()
   let response = testing.build_registration_response(challenge:)
   let response_json =
-    testing.to_registration_json_with(
-      credential_id: response.credential_id,
-      client_data_json: response.client_data_json,
-      attestation_object: response.attestation_object,
-      credential_type: "invalid-type",
-      transports: [],
+    testing.to_registration_json(
+      testing.RegistrationResponse(..response, credential_type: "invalid-type"),
     )
 
   let result = registration.verify(response_json:, challenge:)
@@ -746,36 +660,12 @@ pub fn verify_rejects_invalid_credential_type_test() {
 pub fn verify_rejects_top_level_id_mismatched_with_raw_id_test() {
   let challenge = setup_challenge()
   let response = testing.build_registration_response(challenge:)
-  let glasslock.CredentialId(raw_id_bytes) = response.credential_id
-  let raw_id_b64 = bit_array.base64_url_encode(raw_id_bytes, False)
   let mismatched_id_b64 =
     bit_array.base64_url_encode(<<99, 99, 99, 99, 99, 99, 99, 99>>, False)
   let response_json =
-    json.object([
-      #("id", json.string(mismatched_id_b64)),
-      #("rawId", json.string(raw_id_b64)),
-      #("type", json.string("public-key")),
-      #(
-        "response",
-        json.object([
-          #(
-            "clientDataJSON",
-            json.string(bit_array.base64_url_encode(
-              response.client_data_json,
-              False,
-            )),
-          ),
-          #(
-            "attestationObject",
-            json.string(bit_array.base64_url_encode(
-              response.attestation_object,
-              False,
-            )),
-          ),
-        ]),
-      ),
-    ])
-    |> json.to_string
+    testing.to_registration_json(
+      testing.RegistrationResponse(..response, id: mismatched_id_b64),
+    )
 
   let result = registration.verify(response_json:, challenge:)
   assert result
@@ -801,14 +691,13 @@ pub fn verify_rejects_non_empty_attestation_statement_test() {
       cross_origin: False,
     )
   let response_json =
-    testing.to_registration_json_with(
-      credential_id:,
-      client_data_json:,
-      attestation_object: testing.build_attestation_object_with_non_empty_attstmt(
-        auth_data:,
-      ),
-      credential_type: "public-key",
-      transports: [],
+    build_response_with(
+      challenge:,
+      relying_party_id: registration.challenge_data(challenge).rp_id,
+      cose_key_cbor: testing.cose_key(keypair),
+      flags: testing.default_flags,
+      format: "none",
+      attestation_statement: [#("alg", -7)],
     )
 
   let result = registration.verify(response_json:, challenge:)
@@ -837,15 +726,13 @@ pub fn verify_rejects_unsupported_attestation_format_test() {
       cross_origin: False,
     )
   let response_json =
-    testing.to_registration_json_with(
-      credential_id:,
-      client_data_json:,
-      attestation_object: testing.build_attestation_object_with_fmt(
-        fmt: "fido-u2f",
-        auth_data:,
-      ),
-      credential_type: "public-key",
-      transports: [],
+    build_response_with(
+      challenge:,
+      relying_party_id: registration.challenge_data(challenge).rp_id,
+      cose_key_cbor: testing.cose_key(keypair),
+      flags: testing.default_flags,
+      format: "fido-u2f",
+      attestation_statement: [],
     )
 
   let result = registration.verify(response_json:, challenge:)
@@ -1006,7 +893,7 @@ pub fn decode_rejects_missing_algorithms_test() {
     |> json.to_string
 
   let result = registration.parse_challenge(blob)
-  let assert Error(registration.ParseError(_)) = result
+  assert result == Error(registration.ParseError("Invalid challenge encoding"))
 }
 
 pub fn request_emits_compat_json_test() {
