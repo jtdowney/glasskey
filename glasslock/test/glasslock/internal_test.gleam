@@ -270,18 +270,10 @@ pub fn verify_client_data_rejects_empty_origins_test() {
     ))
 }
 
-pub fn verify_user_policies_present_and_verified_test() {
-  assert internal.verify_user_policies(
-      True,
-      True,
-      glasslock.VerificationRequired,
-
-    )
-    == Ok(Nil)
-}
-
-pub fn verify_user_policies_verification_required_not_verified_test() {
-  assert internal.verify_user_policies(
+pub fn verify_user_policies_matrix_test() {
+  let cases = [
+    #(True, True, glasslock.VerificationRequired, Ok(Nil)),
+    #(
       True,
       False,
       glasslock.VerificationRequired,
@@ -292,7 +284,6 @@ pub fn verify_user_policies_verification_required_not_verified_test() {
     #(
       False,
       True,
-      False,
       glasslock.VerificationDiscouraged,
       Error(internal.UserPresenceFailed),
     ),
