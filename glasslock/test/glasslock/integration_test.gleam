@@ -9,12 +9,13 @@ import gleam/option.{type Option}
 fn glasskey_registration_json(
   response: testing.RegistrationResponse,
 ) -> String {
-  let glasslock.CredentialId(raw_id) = response.credential_id
-  let raw_id_b64 = bit_array.base64_url_encode(raw_id, False)
   json.object([
-    #("id", json.string(raw_id_b64)),
-    #("rawId", json.string(raw_id_b64)),
-    #("type", json.string("public-key")),
+    #("id", json.string(response.id)),
+    #(
+      "rawId",
+      json.string(bit_array.base64_url_encode(response.credential_id, False)),
+    ),
+    #("type", json.string(response.credential_type)),
     #(
       "response",
       json.object([
@@ -40,11 +41,7 @@ fn glasskey_registration_json(
 
 fn glasskey_authentication_json(
   response: testing.AuthenticationResponse,
-  credential_id credential_id: glasslock.CredentialId,
-  user_handle user_handle: Option(BitArray),
 ) -> String {
-  let glasslock.CredentialId(raw_id) = credential_id
-  let raw_id_b64 = bit_array.base64_url_encode(raw_id, False)
   let base = [
     #(
       "clientDataJSON",
@@ -62,7 +59,7 @@ fn glasskey_authentication_json(
       json.string(bit_array.base64_url_encode(response.signature, False)),
     ),
   ]
-  let response_fields = case user_handle {
+  let response_fields = case response.user_handle {
     option.Some(handle) -> [
       #("userHandle", json.string(bit_array.base64_url_encode(handle, False))),
       ..base
@@ -70,9 +67,12 @@ fn glasskey_authentication_json(
     option.None -> base
   }
   json.object([
-    #("id", json.string(raw_id_b64)),
-    #("rawId", json.string(raw_id_b64)),
-    #("type", json.string("public-key")),
+    #("id", json.string(response.id)),
+    #(
+      "rawId",
+      json.string(bit_array.base64_url_encode(response.credential_id, False)),
+    ),
+    #("type", json.string(response.credential_type)),
     #("response", json.object(response_fields)),
   ])
   |> json.to_string
@@ -87,16 +87,10 @@ fn register_then_authenticate(
   let user =
     registration.User(id: <<1, 2, 3, 4>>, name: "test", display_name: "Test")
 
-  let assert Ok(#(_, reg_challenge)) =
-    registration.request(
-      relying_party:,
-      user:,
-      origins: ["https://example.com"],
-      options: registration.Options(
-        ..registration.default_options(),
-        algorithms: [algorithm],
-      ),
-    )
+  let #(_, reg_challenge) =
+    registration.new(relying_party:, user:, origin: "https://example.com")
+    |> registration.algorithms([algorithm])
+    |> registration.build()
   let reg_response =
     testing.build_registration_response_with_keypair(
       challenge: reg_challenge,
@@ -110,33 +104,26 @@ fn register_then_authenticate(
   assert credential.id == reg_response.credential_id
   assert credential.sign_count == 0
 
-  let assert Ok(#(_, auth_challenge)) =
-    authentication.request(
+  let #(_, auth_challenge) =
+    authentication.new(
       relying_party_id: "example.com",
-      origins: ["https://example.com"],
-      options: authentication.Options(
-        ..authentication.default_options(),
-        allow_credentials: [
-          glasslock.CredentialDescriptor(
-            id: credential.id,
-            transports: credential.transports,
-          ),
-        ],
-      ),
+      origin: "https://example.com",
     )
+    |> authentication.allow_credential(
+      id: credential.id,
+      transports: credential.transports,
+    )
+    |> authentication.build()
   let auth_response =
     testing.build_authentication_response(
       challenge: auth_challenge,
+      credential_id: credential.id,
       keypair:,
       sign_count: 1,
     )
   let assert Ok(updated) =
-    authentication.verify(
-      response_json: testing.to_authentication_json(
-        auth_response,
-        credential_id: credential.id,
-        user_handle: option.None,
-      ),
+    authentication.verify_json(
+      response_json: testing.to_authentication_json(auth_response),
       challenge: auth_challenge,
       stored: credential,
     )
@@ -152,13 +139,9 @@ fn register_then_authenticate_with_glasskey_shape(
   let user =
     registration.User(id: <<1, 2, 3, 4>>, name: "test", display_name: "Test")
 
-  let assert Ok(#(_, reg_challenge)) =
-    registration.request(
-      relying_party:,
-      user:,
-      origins: ["https://example.com"],
-      options: registration.default_options(),
-    )
+  let #(_, reg_challenge) =
+    registration.new(relying_party:, user:, origin: "https://example.com")
+    |> registration.build()
   let reg_response =
     testing.build_registration_response_with_keypair(
       challenge: reg_challenge,
@@ -172,32 +155,27 @@ fn register_then_authenticate_with_glasskey_shape(
   assert credential.id == reg_response.credential_id
   assert credential.sign_count == 0
 
-  let assert Ok(#(_, auth_challenge)) =
-    authentication.request(
+  let #(_, auth_challenge) =
+    authentication.new(
       relying_party_id: "example.com",
-      origins: ["https://example.com"],
-      options: authentication.Options(
-        ..authentication.default_options(),
-        allow_credentials: [
-          glasslock.CredentialDescriptor(
-            id: credential.id,
-            transports: credential.transports,
-          ),
-        ],
-      ),
+      origin: "https://example.com",
     )
+    |> authentication.allow_credential(
+      id: credential.id,
+      transports: credential.transports,
+    )
+    |> authentication.build()
   let auth_response =
     testing.build_authentication_response(
       challenge: auth_challenge,
+      credential_id: credential.id,
       keypair:,
       sign_count: 1,
     )
   let assert Ok(updated) =
     authentication.verify(
       response_json: glasskey_authentication_json(
-        auth_response,
-        credential_id: credential.id,
-        user_handle:,
+        testing.AuthenticationResponse(..auth_response, user_handle:),
       ),
       challenge: auth_challenge,
       stored: credential,

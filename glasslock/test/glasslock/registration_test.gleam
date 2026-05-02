@@ -33,31 +33,25 @@ fn user_verification_generator() -> qcheck.Generator(glasslock.UserVerification)
   ])
 }
 
-fn setup_options(uv: glasslock.UserVerification) -> registration.Options {
-  registration.Options(
-    ..registration.default_options(),
-    user_verification: option.Some(uv),
+fn default_builder() -> registration.Builder {
+  registration.new(
+    relying_party: registration.RelyingParty(
+      id: "example.com",
+      name: "Test App",
+    ),
+    user: registration.User(
+      id: <<1, 2, 3, 4, 5, 6, 7, 8>>,
+      name: "testuser",
+      display_name: "Test User",
+    ),
+    origin: "https://example.com",
   )
 }
 
 fn make_request(
-  options: registration.Options,
+  builder: registration.Builder,
 ) -> #(Json, registration.Challenge) {
-  let assert Ok(request) =
-    registration.request(
-      relying_party: registration.RelyingParty(
-        id: "example.com",
-        name: "Test App",
-      ),
-      user: registration.User(
-        id: <<1, 2, 3, 4, 5, 6, 7, 8>>,
-        name: "testuser",
-        display_name: "Test User",
-      ),
-      origins: ["https://example.com"],
-      options:,
-    )
-  request
+  registration.build(builder)
 }
 
 fn setup_challenge() -> registration.Challenge {
@@ -67,7 +61,10 @@ fn setup_challenge() -> registration.Challenge {
 fn setup_challenge_with_verification(
   uv: glasslock.UserVerification,
 ) -> registration.Challenge {
-  let #(_, challenge) = make_request(setup_options(uv))
+  let #(_, challenge) =
+    default_builder()
+    |> registration.user_verification(uv)
+    |> make_request
   challenge
 }
 
@@ -76,8 +73,8 @@ fn build_response(
   flags flags: testing.AuthenticatorFlags,
 ) -> String {
   let keypair = testing.generate_es256_keypair()
-  let credential_id = glasslock.CredentialId(<<1, 2, 3, 4, 5, 6, 7, 8, 9, 10>>)
-  let auth_data =
+  let credential_id = <<1, 2, 3, 4, 5, 6, 7, 8, 9, 10>>
+  let authenticator_data =
     testing.build_registration_authenticator_data(
       relying_party_id: testing.registration_challenge_rp_id(challenge),
       credential_id:,
@@ -102,7 +99,7 @@ fn build_response(
 }
 
 pub fn request_emits_core_fields_test() {
-  let #(options_json, challenge) = make_request(registration.default_options())
+  let #(options_json, challenge) = make_request(default_builder())
 
   let decoder = {
     use relying_party_id <- decode.subfield(["rp", "id"], decode.string)
@@ -129,21 +126,14 @@ pub fn request_with_exclude_credentials_test() {
   let cred1 = <<1, 2, 3, 4>>
   let cred2 = <<5, 6, 7, 8>>
   let #(options_json, _) =
-    make_request(
-      registration.Options(
-        ..setup_options(glasslock.VerificationPreferred),
-        exclude_credentials: [
-          glasslock.CredentialDescriptor(
-            id: glasslock.CredentialId(cred1),
-            transports: [],
-          ),
-          glasslock.CredentialDescriptor(
-            id: glasslock.CredentialId(cred2),
-            transports: [glasslock.TransportUsb, glasslock.TransportInternal],
-          ),
-        ],
-      ),
-    )
+    default_builder()
+    |> registration.user_verification(glasslock.VerificationPreferred)
+    |> registration.exclude_credential(id: cred1, transports: [])
+    |> registration.exclude_credential(id: cred2, transports: [
+      glasslock.TransportUsb,
+      glasslock.TransportInternal,
+    ])
+    |> make_request
 
   let entry_decoder = {
     use id <- decode.field("id", decode.string)
@@ -164,69 +154,15 @@ pub fn request_with_exclude_credentials_test() {
   let assert Ok(entries) = json.parse(json.to_string(options_json), decoder)
   assert entries
     == [
-      #(bit_array.base64_url_encode(cred1, False), []),
       #(bit_array.base64_url_encode(cred2, False), ["usb", "internal"]),
+      #(bit_array.base64_url_encode(cred1, False), []),
     ]
 }
 
-pub fn request_rejects_empty_origins_test() {
-  let assert Error(registration.ParseError(message)) =
-    registration.request(
-      relying_party: registration.RelyingParty(
-        id: "example.com",
-        name: "Test App",
-      ),
-      user: registration.User(
-        id: <<1, 2, 3, 4, 5, 6, 7, 8>>,
-        name: "testuser",
-        display_name: "Test User",
-      ),
-      origins: [],
-      options: registration.default_options(),
-    )
-  assert message
-    == "no allowed origins configured; pass a non-empty origins list to request"
-}
+pub fn build_succeeds_with_defaults_test() {
+  let #(_, challenge) = registration.build(default_builder())
 
-pub fn request_rejects_empty_algorithms_test() {
-  let assert Error(registration.ParseError(message)) =
-    registration.request(
-      relying_party: registration.RelyingParty(
-        id: "example.com",
-        name: "Test App",
-      ),
-      user: registration.User(
-        id: <<1, 2, 3, 4, 5, 6, 7, 8>>,
-        name: "testuser",
-        display_name: "Test User",
-      ),
-      origins: ["https://example.com"],
-      options: registration.Options(
-        ..registration.default_options(),
-        algorithms: [],
-      ),
-    )
-  assert message
-    == "no algorithms configured; pass a non-empty algorithms list to request"
-}
-
-pub fn request_accepts_valid_inputs_test() {
-  let assert Ok(#(_, challenge)) =
-    registration.request(
-      relying_party: registration.RelyingParty(
-        id: "example.com",
-        name: "Test App",
-      ),
-      user: registration.User(
-        id: <<1, 2, 3, 4, 5, 6, 7, 8>>,
-        name: "testuser",
-        display_name: "Test User",
-      ),
-      origins: ["https://example.com"],
-      options: registration.default_options(),
-    )
-
-  assert testing.registration_challenge_origins(challenge)
+  assert set.to_list(registration.challenge_data(challenge).origins)
     == ["https://example.com"]
 }
 
@@ -269,8 +205,7 @@ pub fn verify_defaults_transports_to_empty_when_field_missing_test() {
 pub fn verify_drops_unknown_transport_strings_test() {
   let challenge = setup_challenge()
   let response = testing.build_registration_response(challenge:)
-  let glasslock.CredentialId(raw_credential_id) = response.credential_id
-  let raw_id_b64 = bit_array.base64_url_encode(raw_credential_id, False)
+  let raw_id_b64 = bit_array.base64_url_encode(response.credential_id, False)
   let response_json =
     json.object([
       #("id", json.string(raw_id_b64)),
@@ -428,10 +363,9 @@ pub fn verify_rejects_user_presence_not_asserted_test() {
 pub fn verify_rejects_rp_id_mismatch_test() {
   let challenge = setup_challenge()
   let keypair = testing.generate_es256_keypair()
-  let credential_id = glasslock.CredentialId(<<1, 2, 3, 4, 5, 6, 7, 8, 9, 10>>)
-
-  let auth_data =
-    testing.build_registration_authenticator_data(
+  let response_json =
+    build_response_with(
+      challenge:,
       relying_party_id: "evil.com",
       credential_id:,
       cose_key: testing.cose_key(keypair),
@@ -484,12 +418,10 @@ pub fn verify_rejects_cross_origin_when_disabled_test() {
 
 pub fn verify_succeeds_with_cross_origin_allowed_test() {
   let #(_, challenge) =
-    make_request(
-      registration.Options(
-        ..setup_options(glasslock.VerificationPreferred),
-        allow_cross_origin: True,
-      ),
-    )
+    default_builder()
+    |> registration.user_verification(glasslock.VerificationPreferred)
+    |> registration.allow_cross_origin(True)
+    |> make_request
   let response = testing.build_registration_response(challenge:)
 
   let cross_origin_client_data =
@@ -510,24 +442,11 @@ pub fn verify_succeeds_with_cross_origin_allowed_test() {
 }
 
 pub fn verify_accepts_allowed_top_origin_test() {
-  let assert Ok(#(_, challenge)) =
-    registration.request(
-      relying_party: registration.RelyingParty(
-        id: "example.com",
-        name: "Test App",
-      ),
-      user: registration.User(
-        id: <<1, 2, 3, 4, 5, 6, 7, 8>>,
-        name: "testuser",
-        display_name: "Test User",
-      ),
-      origins: ["https://example.com"],
-      options: registration.Options(
-        ..registration.default_options(),
-        allow_cross_origin: True,
-        allowed_top_origins: ["https://top.example.com"],
-      ),
-    )
+  let #(_, challenge) =
+    default_builder()
+    |> registration.allow_cross_origin(True)
+    |> registration.allowed_top_origin("https://top.example.com")
+    |> registration.build()
   let response = testing.build_registration_response(challenge:)
 
   let client_data_json =
@@ -547,24 +466,11 @@ pub fn verify_accepts_allowed_top_origin_test() {
 }
 
 pub fn verify_rejects_unknown_top_origin_test() {
-  let assert Ok(#(_, challenge)) =
-    registration.request(
-      relying_party: registration.RelyingParty(
-        id: "example.com",
-        name: "Test App",
-      ),
-      user: registration.User(
-        id: <<1, 2, 3, 4, 5, 6, 7, 8>>,
-        name: "testuser",
-        display_name: "Test User",
-      ),
-      origins: ["https://example.com"],
-      options: registration.Options(
-        ..registration.default_options(),
-        allow_cross_origin: True,
-        allowed_top_origins: ["https://top.example.com"],
-      ),
-    )
+  let #(_, challenge) =
+    default_builder()
+    |> registration.allow_cross_origin(True)
+    |> registration.allowed_top_origin("https://top.example.com")
+    |> registration.build()
   let response = testing.build_registration_response(challenge:)
 
   let client_data_json =
@@ -586,24 +492,11 @@ pub fn verify_rejects_unknown_top_origin_test() {
 }
 
 pub fn verify_accepts_missing_top_origin_with_allowlist_test() {
-  let assert Ok(#(_, challenge)) =
-    registration.request(
-      relying_party: registration.RelyingParty(
-        id: "example.com",
-        name: "Test App",
-      ),
-      user: registration.User(
-        id: <<1, 2, 3, 4, 5, 6, 7, 8>>,
-        name: "testuser",
-        display_name: "Test User",
-      ),
-      origins: ["https://example.com"],
-      options: registration.Options(
-        ..registration.default_options(),
-        allow_cross_origin: True,
-        allowed_top_origins: ["https://top.example.com"],
-      ),
-    )
+  let #(_, challenge) =
+    default_builder()
+    |> registration.allow_cross_origin(True)
+    |> registration.allowed_top_origin("https://top.example.com")
+    |> registration.build()
   let response = testing.build_registration_response(challenge:)
 
   let client_data_json =
@@ -675,7 +568,7 @@ pub fn verify_rejects_top_level_id_mismatched_with_raw_id_test() {
 pub fn verify_rejects_non_empty_attestation_statement_test() {
   let challenge = setup_challenge()
   let keypair = testing.generate_es256_keypair()
-  let credential_id = glasslock.CredentialId(<<1, 2, 3, 4, 5, 6, 7, 8, 9, 10>>)
+  let credential_id = <<1, 2, 3, 4, 5, 6, 7, 8, 9, 10>>
   let auth_data =
     testing.build_registration_authenticator_data(
       relying_party_id: testing.registration_challenge_rp_id(challenge),
@@ -710,7 +603,7 @@ pub fn verify_rejects_non_empty_attestation_statement_test() {
 pub fn verify_rejects_unsupported_attestation_format_test() {
   let challenge = setup_challenge()
   let keypair = testing.generate_es256_keypair()
-  let credential_id = glasslock.CredentialId(<<1, 2, 3, 4, 5, 6, 7, 8, 9, 10>>)
+  let credential_id = <<1, 2, 3, 4, 5, 6, 7, 8, 9, 10>>
   let auth_data =
     testing.build_registration_authenticator_data(
       relying_party_id: testing.registration_challenge_rp_id(challenge),
@@ -741,11 +634,10 @@ pub fn verify_rejects_unsupported_attestation_format_test() {
 }
 
 pub fn verify_rejects_credential_algorithm_not_requested_test() {
-  let options =
-    registration.Options(..registration.default_options(), algorithms: [
-      registration.Ed25519,
-    ])
-  let #(_, challenge) = make_request(options)
+  let #(_, challenge) =
+    default_builder()
+    |> registration.algorithms([registration.Ed25519])
+    |> make_request
   let response = testing.build_registration_response(challenge:)
   let response_json = testing.to_registration_json(response)
 
@@ -773,26 +665,25 @@ pub fn encode_decode_roundtrip_preserves_challenge_test() {
     allow_cross_origin,
     user_verification,
   ) = inputs
+  let assert [first_origin, ..rest_origins] = origins
 
-  let options =
-    registration.Options(
-      ..registration.default_options(),
-      algorithms:,
-      allow_cross_origin:,
-      allowed_top_origins:,
-      user_verification: option.Some(user_verification),
-    )
-  let assert Ok(#(_, challenge)) =
-    registration.request(
+  let builder =
+    registration.new(
       relying_party: registration.RelyingParty(id: rp_id, name: "Test App"),
       user: registration.User(
         id: <<1, 2, 3, 4>>,
         name: "testuser",
         display_name: "Test User",
       ),
-      origins:,
-      options:,
+      origin: first_origin,
     )
+    |> registration.algorithms(algorithms)
+    |> registration.allow_cross_origin(allow_cross_origin)
+    |> registration.user_verification(user_verification)
+  let builder = list.fold(rest_origins, builder, registration.origin)
+  let builder =
+    list.fold(allowed_top_origins, builder, registration.allowed_top_origin)
+  let #(_, challenge) = registration.build(builder)
 
   let encoded = registration.encode_challenge(challenge)
   let assert Ok(decoded) = registration.parse_challenge(encoded)
@@ -815,8 +706,8 @@ pub fn encode_decode_roundtrip_preserves_challenge_test() {
 }
 
 pub fn decoded_challenge_drives_verify_test() {
-  let assert Ok(#(_, challenge)) =
-    registration.request(
+  let #(_, challenge) =
+    registration.new(
       relying_party: registration.RelyingParty(
         id: "example.com",
         name: "Test App",
@@ -826,9 +717,9 @@ pub fn decoded_challenge_drives_verify_test() {
         name: "testuser",
         display_name: "Test User",
       ),
-      origins: ["https://example.com"],
-      options: registration.default_options(),
+      origin: "https://example.com",
     )
+    |> registration.build()
 
   let encoded = registration.encode_challenge(challenge)
   let assert Ok(decoded) = registration.parse_challenge(encoded)
@@ -843,12 +734,12 @@ pub fn decoded_challenge_drives_verify_test() {
 }
 
 pub fn decode_rejects_authentication_blob_test() {
-  let assert Ok(#(_, auth_challenge)) =
-    authentication.request(
+  let #(_, auth_challenge) =
+    authentication.new(
       relying_party_id: "example.com",
-      origins: ["https://example.com"],
-      options: authentication.default_options(),
+      origin: "https://example.com",
     )
+    |> authentication.build()
   let encoded = authentication.encode_challenge(auth_challenge)
 
   let result = registration.parse_challenge(encoded)
@@ -897,8 +788,8 @@ pub fn decode_rejects_missing_algorithms_test() {
 }
 
 pub fn request_emits_compat_json_test() {
-  let assert Ok(#(options_json, challenge)) =
-    registration.request(
+  let #(options_json, challenge) =
+    registration.new(
       relying_party: registration.RelyingParty(
         id: "example.com",
         name: "Compat Test",
@@ -908,31 +799,23 @@ pub fn request_emits_compat_json_test() {
         name: "alice",
         display_name: "Alice Example",
       ),
-      origins: ["https://example.com"],
-      options: registration.Options(
-        timeout: duration.seconds(90),
-        authenticator_attachment: option.Some(registration.CrossPlatform),
-        resident_key: option.Some(registration.ResidentKeyRequired),
-        user_verification: option.Some(glasslock.VerificationRequired),
-        allow_cross_origin: False,
-        algorithms: [
-          registration.Es256,
-          registration.Ed25519,
-          registration.Rs256,
-        ],
-        exclude_credentials: [
-          glasslock.CredentialDescriptor(
-            id: glasslock.CredentialId(<<10, 11, 12>>),
-            transports: [],
-          ),
-          glasslock.CredentialDescriptor(
-            id: glasslock.CredentialId(<<20, 21, 22, 23>>),
-            transports: [glasslock.TransportUsb, glasslock.TransportNfc],
-          ),
-        ],
-        allowed_top_origins: [],
-      ),
+      origin: "https://example.com",
     )
+    |> registration.timeout(duration.seconds(90))
+    |> registration.authenticator_attachment(registration.CrossPlatform)
+    |> registration.resident_key(registration.ResidentKeyRequired)
+    |> registration.user_verification(glasslock.VerificationRequired)
+    |> registration.algorithms([
+      registration.Es256,
+      registration.Ed25519,
+      registration.Rs256,
+    ])
+    |> registration.exclude_credential(id: <<10, 11, 12>>, transports: [])
+    |> registration.exclude_credential(id: <<20, 21, 22, 23>>, transports: [
+      glasslock.TransportUsb,
+      glasslock.TransportNfc,
+    ])
+    |> registration.build()
 
   let challenge_b64 =
     bit_array.base64_url_encode(
