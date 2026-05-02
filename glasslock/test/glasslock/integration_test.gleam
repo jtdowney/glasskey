@@ -1,4 +1,3 @@
-import glasslock
 import glasslock/authentication
 import glasslock/registration
 import glasslock/testing
@@ -97,7 +96,7 @@ fn register_then_authenticate(
       keypair:,
     )
   let assert Ok(credential) =
-    registration.verify(
+    registration.verify_json(
       response_json: testing.to_registration_json(reg_response),
       challenge: reg_challenge,
     )
@@ -148,7 +147,7 @@ fn register_then_authenticate_with_glasskey_shape(
       keypair:,
     )
   let assert Ok(credential) =
-    registration.verify(
+    registration.verify_json(
       response_json: glasskey_registration_json(reg_response),
       challenge: reg_challenge,
     )
@@ -173,7 +172,7 @@ fn register_then_authenticate_with_glasskey_shape(
       sign_count: 1,
     )
   let assert Ok(updated) =
-    authentication.verify(
+    authentication.verify_json(
       response_json: glasskey_authentication_json(
         testing.AuthenticationResponse(..auth_response, user_handle:),
       ),
