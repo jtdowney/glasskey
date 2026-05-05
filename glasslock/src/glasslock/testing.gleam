@@ -103,11 +103,11 @@ pub fn cose_key(keypair: KeyPair) -> BitArray {
   let assert Ok(cbor_bytes) = cose.key_to_cbor(pub_key)
   cbor_bytes
 }
-
 /// Get the public key as a parsed `glasslock.PublicKey`.
 /// Use to construct a stored `Credential` in tests.
 pub fn public_key(keypair: KeyPair) -> glasslock.PublicKey {
-  glasslock.PublicKey(cose_key(keypair))
+  let assert Ok(public_key) = glasslock.parse_public_key(cose_key(keypair))
+  public_key
 }
 
 /// Sign a message using the algorithm stamped on the keypair.
