@@ -56,7 +56,7 @@ fn default_registration_fixture() -> RegistrationFixture {
 }
 
 fn default_registration_options() -> glasskey.RegistrationOptions {
-  glasskey.RegistrationOptions(
+  glasskey.registration_options(
     challenge: <<1, 2, 3, 4>>,
     rp_id: "example.com",
     rp_name: "Example",
@@ -73,7 +73,7 @@ fn default_registration_options() -> glasskey.RegistrationOptions {
 }
 
 fn default_authentication_options() -> glasskey.AuthenticationOptions {
-  glasskey.AuthenticationOptions(
+  glasskey.authentication_options(
     challenge: <<9, 10, 11>>,
     rp_id: option.Some("example.com"),
     timeout: option.None,
@@ -224,6 +224,7 @@ pub fn decode_registration_options_test() {
     )
 
   let assert Ok(opt) = decode.run(dyn, glasskey.registration_options_decoder())
+  let opt = glasskey.registration_options_fields(opt)
 
   assert opt.challenge == <<"test-challenge":utf8>>
   assert opt.rp_id == "example.com"
@@ -249,6 +250,7 @@ pub fn decode_registration_options_with_exclude_credentials_test() {
     )
 
   let assert Ok(opt) = decode.run(dyn, glasskey.registration_options_decoder())
+  let opt = glasskey.registration_options_fields(opt)
 
   assert opt.exclude_credentials
     == [
@@ -290,6 +292,7 @@ pub fn decode_registration_options_omits_authenticator_selection_test() {
     ])
 
   let assert Ok(opt) = decode.run(dyn, glasskey.registration_options_decoder())
+  let opt = glasskey.registration_options_fields(opt)
   assert opt.resident_key == option.None
   assert opt.user_verification == option.None
   assert opt.authenticator_attachment == option.None
@@ -327,6 +330,7 @@ pub fn decode_registration_options_authenticator_selection_inner_omitted_test() 
     ])
 
   let assert Ok(opt) = decode.run(dyn, glasskey.registration_options_decoder())
+  let opt = glasskey.registration_options_fields(opt)
   assert opt.resident_key == option.None
   assert opt.user_verification == option.None
   assert opt.authenticator_attachment == option.None
@@ -353,6 +357,15 @@ pub fn decode_registration_options_unknown_algorithm_test() {
   let dyn =
     build_registration_options(
       RegistrationFixture(..default_registration_fixture(), algorithms: [-999]),
+    )
+
+  let assert Error(_) = decode.run(dyn, glasskey.registration_options_decoder())
+}
+
+pub fn decode_registration_options_empty_algorithms_test() {
+  let dyn =
+    build_registration_options(
+      RegistrationFixture(..default_registration_fixture(), algorithms: []),
     )
 
   let assert Error(_) = decode.run(dyn, glasskey.registration_options_decoder())
@@ -431,6 +444,7 @@ pub fn decode_authentication_options_test() {
 
   let assert Ok(opt) =
     decode.run(dyn, glasskey.authentication_options_decoder())
+  let opt = glasskey.authentication_options_fields(opt)
 
   assert opt.challenge == <<"test-challenge":utf8>>
   assert opt.rp_id == option.Some("example.com")
@@ -464,6 +478,7 @@ pub fn decode_authentication_options_drops_unknown_transports_test() {
 
   let assert Ok(opt) =
     decode.run(dyn, glasskey.authentication_options_decoder())
+  let opt = glasskey.authentication_options_fields(opt)
 
   assert opt.allow_credentials
     == [
@@ -501,6 +516,7 @@ pub fn decode_authentication_options_with_allow_credentials_test() {
 
   let assert Ok(opt) =
     decode.run(dyn, glasskey.authentication_options_decoder())
+  let opt = glasskey.authentication_options_fields(opt)
 
   assert opt.allow_credentials
     == [
@@ -520,6 +536,7 @@ pub fn decode_authentication_options_minimal_test() {
 
   let assert Ok(opt) =
     decode.run(dyn, glasskey.authentication_options_decoder())
+  let opt = glasskey.authentication_options_fields(opt)
 
   assert opt.challenge == <<"test":utf8>>
   assert opt.rp_id == option.None
@@ -611,6 +628,7 @@ pub fn decode_registration_options_roundtrip_test() {
       ),
     )
   let assert Ok(opt) = decode.run(dyn, glasskey.registration_options_decoder())
+  let opt = glasskey.registration_options_fields(opt)
   assert opt.challenge == challenge
   assert opt.user_id == user_id
   assert opt.rp_name == rp_name
@@ -811,78 +829,29 @@ pub fn start_registration_returns_not_allowed_when_user_dismisses_test() {
   promise.resolve(Nil)
 }
 
-pub fn start_registration_classifies_not_supported_error_test() {
-  use <- with_fake_navigator
-  helpers.set_create_dom_exception(name: "NotSupportedError", message: "boom")
+pub fn translate_dom_exception_test() {
+  let cases = [
+    #("NotSupportedError", "boom", glasskey.NotSupported),
+    #("NotAllowedError", "boom", glasskey.NotAllowed),
+    #("AbortError", "boom", glasskey.Aborted),
+    #("SecurityError", "boom", glasskey.SecurityError),
+    #("InvalidStateError", "already registered", glasskey.InvalidState),
+    #("WeirdError", "oops", glasskey.UnknownError("WeirdError: oops")),
+  ]
 
-  use result <- promise.await(
-    glasskey.start_registration(default_registration_options()),
-  )
-
-  assert result == Error(glasskey.NotSupported)
-  promise.resolve(Nil)
+  list.each(cases, fn(triple) {
+    let #(name, message, expected) = triple
+    assert glasskey.translate_dom_exception(name, message) == expected
+  })
 }
 
-pub fn start_registration_classifies_not_allowed_error_test() {
+pub fn start_registration_routes_dom_exceptions_through_translator_test() {
   use <- with_fake_navigator
   helpers.set_create_dom_exception(name: "NotAllowedError", message: "boom")
-
   use result <- promise.await(
     glasskey.start_registration(default_registration_options()),
   )
-
   assert result == Error(glasskey.NotAllowed)
-  promise.resolve(Nil)
-}
-
-pub fn start_registration_classifies_abort_error_test() {
-  use <- with_fake_navigator
-  helpers.set_create_dom_exception(name: "AbortError", message: "boom")
-
-  use result <- promise.await(
-    glasskey.start_registration(default_registration_options()),
-  )
-
-  assert result == Error(glasskey.Aborted)
-  promise.resolve(Nil)
-}
-
-pub fn start_registration_classifies_security_error_test() {
-  use <- with_fake_navigator
-  helpers.set_create_dom_exception(name: "SecurityError", message: "boom")
-
-  use result <- promise.await(
-    glasskey.start_registration(default_registration_options()),
-  )
-
-  assert result == Error(glasskey.SecurityError)
-  promise.resolve(Nil)
-}
-
-pub fn start_registration_classifies_invalid_state_error_test() {
-  use <- with_fake_navigator
-  helpers.set_create_dom_exception(
-    name: "InvalidStateError",
-    message: "already registered",
-  )
-
-  use result <- promise.await(
-    glasskey.start_registration(default_registration_options()),
-  )
-
-  assert result == Error(glasskey.InvalidState)
-  promise.resolve(Nil)
-}
-
-pub fn start_registration_unknown_dom_exception_includes_name_and_message_test() {
-  use <- with_fake_navigator
-  helpers.set_create_dom_exception(name: "WeirdError", message: "oops")
-
-  use result <- promise.await(
-    glasskey.start_registration(default_registration_options()),
-  )
-
-  assert result == Error(glasskey.UnknownError("WeirdError: oops"))
   promise.resolve(Nil)
 }
 
@@ -895,6 +864,19 @@ pub fn start_registration_plain_error_becomes_unknown_error_test() {
   )
 
   assert result == Error(glasskey.UnknownError("network down"))
+  promise.resolve(Nil)
+}
+
+pub fn start_registration_plain_error_without_dom_exception_test() {
+  use <- with_fake_navigator
+  helpers.delete_dom_exception()
+  helpers.set_create_plain_error("runtime missing DOMException")
+
+  use result <- promise.await(
+    glasskey.start_registration(default_registration_options()),
+  )
+
+  assert result == Error(glasskey.UnknownError("runtime missing DOMException"))
   promise.resolve(Nil)
 }
 
@@ -923,11 +905,17 @@ pub fn start_registration_passes_options_to_navigator_test() {
   )
 
   let opts =
-    glasskey.RegistrationOptions(
-      ..default_registration_options(),
+    glasskey.registration_options(
       challenge: <<99, 100, 101, 102>>,
       rp_id: "passes.example",
+      rp_name: "Example",
+      user_id: <<5, 6, 7, 8>>,
+      user_name: "alice",
+      user_display_name: "Alice",
+      algorithms: [glasskey.Es256, glasskey.Ed25519, glasskey.Rs256],
       timeout: option.Some(60_000),
+      resident_key: option.Some(glasskey.Required),
+      user_verification: option.Some(glasskey.Preferred),
       authenticator_attachment: option.Some(glasskey.Platform),
       exclude_credentials: [
         glasskey.CredentialDescriptor(id: <<11, 12>>, transports: []),
@@ -983,11 +971,19 @@ pub fn start_registration_omits_authenticator_selection_when_all_none_test() {
   )
 
   let opts =
-    glasskey.RegistrationOptions(
-      ..default_registration_options(),
+    glasskey.registration_options(
+      challenge: <<1, 2, 3, 4>>,
+      rp_id: "example.com",
+      rp_name: "Example",
+      user_id: <<5, 6, 7, 8>>,
+      user_name: "alice",
+      user_display_name: "Alice",
+      algorithms: [glasskey.Es256, glasskey.Ed25519, glasskey.Rs256],
+      timeout: option.None,
       resident_key: option.None,
       user_verification: option.None,
       authenticator_attachment: option.None,
+      exclude_credentials: [],
     )
 
   use _ <- promise.await(glasskey.start_registration(opts))
@@ -1010,11 +1006,19 @@ pub fn start_registration_emits_explicit_authenticator_selection_test() {
   )
 
   let opts =
-    glasskey.RegistrationOptions(
-      ..default_registration_options(),
+    glasskey.registration_options(
+      challenge: <<1, 2, 3, 4>>,
+      rp_id: "example.com",
+      rp_name: "Example",
+      user_id: <<5, 6, 7, 8>>,
+      user_name: "alice",
+      user_display_name: "Alice",
+      algorithms: [glasskey.Es256, glasskey.Ed25519, glasskey.Rs256],
+      timeout: option.None,
       resident_key: option.Some(glasskey.Required),
       user_verification: option.Some(glasskey.Required),
       authenticator_attachment: option.None,
+      exclude_credentials: [],
     )
 
   use _ <- promise.await(glasskey.start_registration(opts))
@@ -1113,78 +1117,13 @@ pub fn start_authentication_returns_not_allowed_when_user_dismisses_test() {
   promise.resolve(Nil)
 }
 
-pub fn start_authentication_classifies_security_error_test() {
-  use <- with_fake_navigator
-  helpers.set_get_dom_exception(name: "SecurityError", message: "bad rp")
-
-  use result <- promise.await(
-    glasskey.start_authentication(default_authentication_options()),
-  )
-
-  assert result == Error(glasskey.SecurityError)
-  promise.resolve(Nil)
-}
-
-pub fn start_authentication_classifies_not_supported_error_test() {
-  use <- with_fake_navigator
-  helpers.set_get_dom_exception(name: "NotSupportedError", message: "boom")
-
-  use result <- promise.await(
-    glasskey.start_authentication(default_authentication_options()),
-  )
-
-  assert result == Error(glasskey.NotSupported)
-  promise.resolve(Nil)
-}
-
-pub fn start_authentication_classifies_not_allowed_error_test() {
+pub fn start_authentication_routes_dom_exceptions_through_translator_test() {
   use <- with_fake_navigator
   helpers.set_get_dom_exception(name: "NotAllowedError", message: "boom")
-
   use result <- promise.await(
     glasskey.start_authentication(default_authentication_options()),
   )
-
   assert result == Error(glasskey.NotAllowed)
-  promise.resolve(Nil)
-}
-
-pub fn start_authentication_classifies_abort_error_test() {
-  use <- with_fake_navigator
-  helpers.set_get_dom_exception(name: "AbortError", message: "boom")
-
-  use result <- promise.await(
-    glasskey.start_authentication(default_authentication_options()),
-  )
-
-  assert result == Error(glasskey.Aborted)
-  promise.resolve(Nil)
-}
-
-pub fn start_authentication_classifies_invalid_state_error_test() {
-  use <- with_fake_navigator
-  helpers.set_get_dom_exception(
-    name: "InvalidStateError",
-    message: "already registered",
-  )
-
-  use result <- promise.await(
-    glasskey.start_authentication(default_authentication_options()),
-  )
-
-  assert result == Error(glasskey.InvalidState)
-  promise.resolve(Nil)
-}
-
-pub fn start_authentication_unknown_dom_exception_includes_name_and_message_test() {
-  use <- with_fake_navigator
-  helpers.set_get_dom_exception(name: "WeirdError", message: "oops")
-
-  use result <- promise.await(
-    glasskey.start_authentication(default_authentication_options()),
-  )
-
-  assert result == Error(glasskey.UnknownError("WeirdError: oops"))
   promise.resolve(Nil)
 }
 
@@ -1211,9 +1150,11 @@ pub fn start_authentication_passes_options_to_navigator_test() {
   )
 
   let opts =
-    glasskey.AuthenticationOptions(
-      ..default_authentication_options(),
+    glasskey.authentication_options(
+      challenge: <<9, 10, 11>>,
+      rp_id: option.Some("example.com"),
       timeout: option.Some(45_000),
+      user_verification: option.Some(glasskey.Required),
       allow_credentials: [
         glasskey.CredentialDescriptor(id: <<21, 22>>, transports: []),
         glasskey.CredentialDescriptor(id: <<23, 24>>, transports: [
@@ -1235,6 +1176,7 @@ pub fn start_authentication_passes_options_to_navigator_test() {
   assert snapshot.allow_credential_count == 3
   assert snapshot.allow_credential_transports
     == [[], ["nfc"], ["ble", "smart-card"]]
+  assert snapshot.mediation == option.None
 
   promise.resolve(Nil)
 }
@@ -1250,9 +1192,12 @@ pub fn start_authentication_omits_optional_fields_when_none_test() {
   )
 
   let opts =
-    glasskey.AuthenticationOptions(
-      ..default_authentication_options(),
+    glasskey.authentication_options(
+      challenge: <<9, 10, 11>>,
+      rp_id: option.Some("example.com"),
+      timeout: option.None,
       user_verification: option.None,
+      allow_credentials: [],
     )
 
   use _ <- promise.await(glasskey.start_authentication(opts))
@@ -1275,18 +1220,34 @@ pub fn start_conditional_authentication_returns_not_supported_when_globals_missi
 pub fn start_conditional_authentication_resolves_to_assertion_test() {
   use <- with_fake_navigator
   helpers.set_get_credential(
-    raw_id: <<1>>,
+    raw_id: <<10, 20, 30>>,
     client_data_json: <<"{}":utf8>>,
-    authenticator_data: <<3>>,
-    signature: <<4>>,
-    user_handle: option.None,
+    authenticator_data: <<70, 80, 90>>,
+    signature: <<100, 110, 120>>,
+    user_handle: option.Some(<<1, 2>>),
   )
 
   let assert Ok(handle) =
     glasskey.start_conditional_authentication(default_authentication_options())
   use result <- promise.await(handle.result)
 
-  let assert Ok(_) = result
+  let assert Ok(json_value) = result
+  let json_string = json.to_string(json_value)
+  let decoder = {
+    use raw_id <- decode.field("rawId", decode.string)
+    use signature <- decode.subfield(["response", "signature"], decode.string)
+    use user_handle <- decode.subfield(
+      ["response", "userHandle"],
+      decode.optional(decode.string),
+    )
+    decode.success(#(raw_id, signature, user_handle))
+  }
+  let assert Ok(#(raw_id, signature, user_handle)) =
+    json.parse(json_string, decoder)
+  assert raw_id == "ChQe"
+  assert signature == "ZG54"
+  assert user_handle == option.Some("AQI")
+
   promise.resolve(Nil)
 }
 
@@ -1321,7 +1282,26 @@ pub fn start_conditional_authentication_abort_signals_navigator_test() {
   promise.resolve(Nil)
 }
 
-pub fn start_conditional_authentication_classifies_abort_test() {
+pub fn start_conditional_authentication_passes_conditional_mediation_test() {
+  use <- with_fake_navigator
+  helpers.set_get_credential(
+    raw_id: <<1>>,
+    client_data_json: <<"{}":utf8>>,
+    authenticator_data: <<3>>,
+    signature: <<4>>,
+    user_handle: option.None,
+  )
+
+  let assert Ok(handle) =
+    glasskey.start_conditional_authentication(default_authentication_options())
+  use _ <- promise.await(handle.result)
+
+  let assert Ok(snapshot) = helpers.last_get_snapshot()
+  assert snapshot.mediation == option.Some("conditional")
+  promise.resolve(Nil)
+}
+
+pub fn start_conditional_authentication_translates_abort_test() {
   use <- with_fake_navigator
   helpers.set_get_dom_exception(name: "AbortError", message: "boom")
 

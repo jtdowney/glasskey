@@ -166,6 +166,10 @@ pub fn build_succeeds_with_defaults_test() {
     == ["https://example.com"]
 }
 
+pub fn algorithms_rejects_empty_list_test() {
+  assert registration.algorithms(default_builder(), []) == Error(Nil)
+}
+
 pub fn verify_valid_registration_test() {
   let challenge = setup_challenge()
   let response = testing.build_registration_response(challenge:)
@@ -590,10 +594,9 @@ pub fn verify_rejects_unsupported_attestation_format_test() {
 }
 
 pub fn verify_rejects_credential_algorithm_not_requested_test() {
-  let #(_, challenge) =
-    default_builder()
-    |> registration.algorithms([registration.Ed25519])
-    |> make_request
+  let assert Ok(builder) =
+    registration.algorithms(default_builder(), [registration.Ed25519])
+  let #(_, challenge) = make_request(builder)
   let response = testing.build_registration_response(challenge:)
   let response_json = testing.to_registration_json(response)
 
@@ -623,7 +626,7 @@ pub fn encode_decode_roundtrip_preserves_challenge_test() {
   ) = inputs
   let assert [first_origin, ..rest_origins] = origins
 
-  let builder =
+  let initial_builder =
     registration.new(
       relying_party: registration.RelyingParty(id: rp_id, name: "Test App"),
       user: registration.User(
@@ -633,7 +636,9 @@ pub fn encode_decode_roundtrip_preserves_challenge_test() {
       ),
       origin: first_origin,
     )
-    |> registration.algorithms(algorithms)
+  let assert Ok(builder) = registration.algorithms(initial_builder, algorithms)
+  let builder =
+    builder
     |> registration.allow_cross_origin(allow_cross_origin)
     |> registration.user_verification(user_verification)
   let builder = list.fold(rest_origins, builder, registration.origin)
@@ -744,8 +749,27 @@ pub fn decode_rejects_missing_algorithms_test() {
   assert result == Error(registration.ParseError("Invalid challenge encoding"))
 }
 
+pub fn decode_rejects_empty_algorithms_test() {
+  let blob =
+    json.object([
+      #("v", json.int(1)),
+      #("kind", json.string("registration")),
+      #("bytes", json.string(bit_array.base64_url_encode(<<0:256>>, False))),
+      #("rp_id", json.string("example.com")),
+      #("origins", json.array(["https://example.com"], json.string)),
+      #("user_verification", json.string("preferred")),
+      #("allow_cross_origin", json.bool(False)),
+      #("allowed_top_origins", json.array([], json.string)),
+      #("algorithms", json.array([], json.int)),
+    ])
+    |> json.to_string
+
+  let result = registration.parse_challenge(blob)
+  assert result == Error(registration.ParseError("Challenge has no algorithms"))
+}
+
 pub fn request_emits_compat_json_test() {
-  let #(options_json, challenge) =
+  let initial_builder =
     registration.new(
       relying_party: registration.RelyingParty(
         id: "example.com",
@@ -762,11 +786,14 @@ pub fn request_emits_compat_json_test() {
     |> registration.authenticator_attachment(registration.CrossPlatform)
     |> registration.resident_key(registration.ResidentKeyRequired)
     |> registration.user_verification(glasslock.VerificationRequired)
-    |> registration.algorithms([
+  let assert Ok(builder) =
+    registration.algorithms(initial_builder, [
       registration.Es256,
       registration.Ed25519,
       registration.Rs256,
     ])
+  let #(options_json, challenge) =
+    builder
     |> registration.exclude_credential(id: <<10, 11, 12>>, transports: [])
     |> registration.exclude_credential(id: <<20, 21, 22, 23>>, transports: [
       glasslock.TransportUsb,

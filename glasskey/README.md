@@ -99,9 +99,3 @@ use available <- promise.await(glasskey.supports_webauthn_autofill())
 | `SecurityError`     | Security policy violation (e.g., non-HTTPS origin)                 |
 | `InvalidState`      | Authenticator state conflict (e.g., credential already registered) |
 | `UnknownError(msg)` | Unexpected browser error                                           |
-
-## How It Works
-
-1. Options JSON from glasslock is parsed and validated, then passed to the browser API
-2. The FFI calls `navigator.credentials.create()` or `.get()`, handling `ArrayBuffer` conversion
-3. The response is serialized to JSON compatible with glasslock's `verify()` functions

@@ -86,10 +86,12 @@ fn register_then_authenticate(
   let user =
     registration.User(id: <<1, 2, 3, 4>>, name: "test", display_name: "Test")
 
-  let #(_, reg_challenge) =
-    registration.new(relying_party:, user:, origin: "https://example.com")
-    |> registration.algorithms([algorithm])
-    |> registration.build()
+  let assert Ok(builder) =
+    registration.algorithms(
+      registration.new(relying_party:, user:, origin: "https://example.com"),
+      [algorithm],
+    )
+  let #(_, reg_challenge) = registration.build(builder)
   let reg_response =
     testing.build_registration_response_with_keypair(
       challenge: reg_challenge,

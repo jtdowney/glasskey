@@ -25,11 +25,11 @@ After starting either example, walk both ceremonies end-to-end:
 
 1. Open the frontend (`http://localhost:1234` for Lustre, `http://localhost:5173` for Svelte).
 2. Click **Register**, enter a username, and complete the authenticator prompt (Touch ID, Windows Hello, a security key, or a virtual authenticator).
-3. Confirm the welcome page shows for the new username.
+3. Confirm the registration success message appears on the register page.
 4. Reload to land back on the home page, then click **Sign in** and complete the authenticator prompt again.
 5. Confirm the welcome page renders for the same username.
 
-If your machine has no built-in authenticator, enable one in Chrome DevTools: open **More tools → WebAuthn**, click **Enable**, then **Add authenticator** with **Resident keys** and **User verification** turned on.
+If your machine has no built-in authenticator, enable one in Chrome DevTools: open the **More tools** menu, select **WebAuthn**, click **Enable**, then **Add authenticator** with **Resident keys** and **User verification** turned on.
 
 ## Configuration
 
@@ -53,7 +53,7 @@ The backend exposes four endpoints under `/api`:
 | `POST /api/login/begin`       | `{"username": "<name>"}` (omit or empty for discoverable flow) | `{"options": <PublicKeyCredentialRequestOptionsJSON>}`  |
 | `POST /api/login/complete`    | `{"response": <PublicKeyCredentialJSON>}`                      | `{"verified": true, "username": "<name>"}`              |
 
-The `response` field on the `*/complete` endpoints is the WebAuthn response object as returned by `navigator.credentials.create` / `.get` (already in the shape produced by `PublicKeyCredential.toJSON()`). The backend uses `glasslock`'s `response_decoder()` to extract it from the envelope and pass straight to `verify` — no re-serialization. Both frontends post it as a nested object: see `frontends/svelte/src/lib/api.js` and `frontends/lustre/src/frontend/api.gleam`.
+The `response` field on the `*/complete` endpoints is the WebAuthn response object as returned by `navigator.credentials.create` / `.get` (already in the shape produced by `PublicKeyCredential.toJSON()`). The backend uses `glasslock`'s `response_decoder()` to extract it from the envelope and pass straight to `verify`, with no re-serialization. Both frontends post it as a nested object: see `frontends/svelte/src/lib/api.js` and `frontends/lustre/src/frontend/api.gleam`.
 
 ## Production caveats
 

@@ -11,7 +11,7 @@ import {
   Error$UnknownError,
   RegistrationCredential$RegistrationCredential,
   authenticator_attachment_to_string as authenticatorAttachmentToString,
-  classify_dom_exception as classifyDomException,
+  translate_dom_exception as translateDomException,
   requirement_to_string as requirementToString,
   transport_to_string as transportToString,
 } from "./glasskey.mjs";
@@ -72,7 +72,7 @@ export async function createCredential(opts) {
 
     return Result$Ok(buildRegistrationCredential(credential));
   } catch (error) {
-    return Result$Error(classifyJsError(error));
+    return Result$Error(translateJsError(error));
   }
 }
 
@@ -115,7 +115,7 @@ export async function getCredential(opts) {
 
     return Result$Ok(buildAuthenticationCredential(credential));
   } catch (error) {
-    return Result$Error(classifyJsError(error));
+    return Result$Error(translateJsError(error));
   }
 }
 
@@ -130,7 +130,7 @@ export function getConditionalCredential(opts) {
       () => controller.abort(),
     ];
   } catch (error) {
-    return [Promise.resolve(Result$Error(classifyJsError(error))), () => {}];
+    return [Promise.resolve(Result$Error(translateJsError(error))), () => {}];
   }
 }
 
@@ -152,7 +152,7 @@ async function runConditionalGet(publicKey, signal) {
 
     return Result$Ok(buildAuthenticationCredential(credential));
   } catch (error) {
-    return Result$Error(classifyJsError(error));
+    return Result$Error(translateJsError(error));
   }
 }
 
@@ -160,9 +160,9 @@ function toBitArray(buffer) {
   return BitArray$BitArray(new Uint8Array(buffer));
 }
 
-function classifyJsError(error) {
-  if (error instanceof DOMException) {
-    return classifyDomException(error.name, describeError(error));
+function translateJsError(error) {
+  if (typeof DOMException !== "undefined" && error instanceof DOMException) {
+    return translateDomException(error.name, describeError(error));
   }
 
   if (error instanceof Error) {

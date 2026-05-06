@@ -65,7 +65,9 @@ pub type AuthenticationCredential {
 }
 
 /// Parsed authentication ceremony options from the server.
-pub type AuthenticationOptions {
+///
+/// Construct with [`authentication_options_decoder`](#authentication_options_decoder).
+pub opaque type AuthenticationOptions {
   AuthenticationOptions(
     /// Raw challenge bytes.
     challenge: BitArray,
@@ -81,6 +83,54 @@ pub type AuthenticationOptions {
     /// Credentials the user may authenticate with. An empty list selects
     /// the discoverable (passkey) flow.
     allow_credentials: List(CredentialDescriptor),
+  )
+}
+
+@internal
+pub fn authentication_options(
+  challenge challenge: BitArray,
+  rp_id rp_id: Option(String),
+  timeout timeout: Option(Int),
+  user_verification user_verification: Option(Requirement),
+  allow_credentials allow_credentials: List(CredentialDescriptor),
+) -> AuthenticationOptions {
+  AuthenticationOptions(
+    challenge:,
+    rp_id:,
+    timeout:,
+    user_verification:,
+    allow_credentials:,
+  )
+}
+
+@internal
+pub type AuthenticationOptionsFields {
+  AuthenticationOptionsFields(
+    challenge: BitArray,
+    rp_id: Option(String),
+    timeout: Option(Int),
+    user_verification: Option(Requirement),
+    allow_credentials: List(CredentialDescriptor),
+  )
+}
+
+@internal
+pub fn authentication_options_fields(
+  options: AuthenticationOptions,
+) -> AuthenticationOptionsFields {
+  let AuthenticationOptions(
+    challenge:,
+    rp_id:,
+    timeout:,
+    user_verification:,
+    allow_credentials:,
+  ) = options
+  AuthenticationOptionsFields(
+    challenge:,
+    rp_id:,
+    timeout:,
+    user_verification:,
+    allow_credentials:,
   )
 }
 
@@ -120,7 +170,7 @@ pub fn transport_to_string(transport: Transport) -> String {
 }
 
 @internal
-pub fn classify_dom_exception(name: String, message: String) -> Error {
+pub fn translate_dom_exception(name: String, message: String) -> Error {
   case name {
     "NotSupportedError" -> NotSupported
     "NotAllowedError" -> NotAllowed
@@ -184,7 +234,9 @@ pub type RegistrationCredential {
 }
 
 /// Parsed registration ceremony options from the server.
-pub type RegistrationOptions {
+///
+/// Construct with [`registration_options_decoder`](#registration_options_decoder).
+pub opaque type RegistrationOptions {
   RegistrationOptions(
     /// Raw challenge bytes.
     challenge: BitArray,
@@ -199,7 +251,7 @@ pub type RegistrationOptions {
     /// Human-readable display name shown to the user.
     user_display_name: String,
     /// Accepted signing algorithms in preference order. The authenticator
-    /// picks the first it supports.
+    /// picks the first it supports. Always non-empty.
     algorithms: List(Algorithm),
     /// Ceremony timeout in milliseconds. `None` lets the browser apply its
     /// default.
@@ -215,6 +267,91 @@ pub type RegistrationOptions {
     /// Credentials to exclude (prevent re-registration of an existing
     /// authenticator).
     exclude_credentials: List(CredentialDescriptor),
+  )
+}
+
+@internal
+pub fn registration_options(
+  challenge challenge: BitArray,
+  rp_id rp_id: String,
+  rp_name rp_name: String,
+  user_id user_id: BitArray,
+  user_name user_name: String,
+  user_display_name user_display_name: String,
+  algorithms algorithms: List(Algorithm),
+  timeout timeout: Option(Int),
+  resident_key resident_key: Option(Requirement),
+  user_verification user_verification: Option(Requirement),
+  authenticator_attachment authenticator_attachment: Option(
+    AuthenticatorAttachment,
+  ),
+  exclude_credentials exclude_credentials: List(CredentialDescriptor),
+) -> RegistrationOptions {
+  RegistrationOptions(
+    challenge:,
+    rp_id:,
+    rp_name:,
+    user_id:,
+    user_name:,
+    user_display_name:,
+    algorithms:,
+    timeout:,
+    resident_key:,
+    user_verification:,
+    authenticator_attachment:,
+    exclude_credentials:,
+  )
+}
+
+@internal
+pub type RegistrationOptionsFields {
+  RegistrationOptionsFields(
+    challenge: BitArray,
+    rp_id: String,
+    rp_name: String,
+    user_id: BitArray,
+    user_name: String,
+    user_display_name: String,
+    algorithms: List(Algorithm),
+    timeout: Option(Int),
+    resident_key: Option(Requirement),
+    user_verification: Option(Requirement),
+    authenticator_attachment: Option(AuthenticatorAttachment),
+    exclude_credentials: List(CredentialDescriptor),
+  )
+}
+
+@internal
+pub fn registration_options_fields(
+  options: RegistrationOptions,
+) -> RegistrationOptionsFields {
+  let RegistrationOptions(
+    challenge:,
+    rp_id:,
+    rp_name:,
+    user_id:,
+    user_name:,
+    user_display_name:,
+    algorithms:,
+    timeout:,
+    resident_key:,
+    user_verification:,
+    authenticator_attachment:,
+    exclude_credentials:,
+  ) = options
+  RegistrationOptionsFields(
+    challenge:,
+    rp_id:,
+    rp_name:,
+    user_id:,
+    user_name:,
+    user_display_name:,
+    algorithms:,
+    timeout:,
+    resident_key:,
+    user_verification:,
+    authenticator_attachment:,
+    exclude_credentials:,
   )
 }
 
@@ -271,10 +408,12 @@ type User {
 /// Start the WebAuthn authentication ceremony.
 ///
 /// Takes options parsed with [`authentication_options_decoder`](#authentication_options_decoder),
-/// then calls `navigator.credentials.get`. Returns a promise resolving to the
-/// assertion response as a `Json` value. Stringify with `json.to_string`
-/// before sending to glasslock's `authentication.verify`, or embed under a
-/// key in a larger envelope.
+/// then calls `navigator.credentials.get`. Returns a promise resolving to
+/// the assertion response as a `Json` value. Send the JSON string to
+/// `glasslock/authentication.verify_json`, or embed it in a larger
+/// envelope and decode it server-side with
+/// `glasslock/authentication.response_decoder()` before calling
+/// `glasslock/authentication.verify`.
 pub fn start_authentication(
   options: AuthenticationOptions,
 ) -> Promise(Result(Json, Error)) {
@@ -391,7 +530,7 @@ fn b64_json(bytes: BitArray) -> Json {
 }
 
 /// Decoder for the `PublicKeyCredentialRequestOptionsJSON` shape produced by
-/// `glasslock/authentication.request`.
+/// `glasslock/authentication.build`.
 ///
 /// Use this when decoding the server's envelope response so the `options`
 /// subtree comes out as a typed `AuthenticationOptions` ready to pass to
@@ -429,7 +568,7 @@ pub fn authentication_options_decoder() -> decode.Decoder(AuthenticationOptions)
 }
 
 /// Decoder for the `PublicKeyCredentialCreationOptionsJSON` shape produced by
-/// `glasslock/registration.request`.
+/// `glasslock/registration.build`.
 ///
 /// Use this when decoding the server's envelope response so the `options`
 /// subtree comes out as a typed `RegistrationOptions` ready to pass to
@@ -446,11 +585,7 @@ pub fn registration_options_decoder() -> decode.Decoder(RegistrationOptions) {
   )
   use algorithms <- decode.field(
     "pubKeyCredParams",
-    decode.list({
-      use _ <- decode.field("type", public_key_credential_type_decoder())
-      use alg <- decode.field("alg", algorithm_decoder())
-      decode.success(alg)
-    }),
+    pub_key_cred_params_decoder(),
   )
   use timeout <- decode.optional_field(
     "timeout",
@@ -493,6 +628,24 @@ fn algorithm_decoder() -> decode.Decoder(Algorithm) {
       _ -> decode.failure(Es256, "algorithm")
     }
   })
+}
+
+fn pub_key_cred_params_decoder() -> decode.Decoder(List(Algorithm)) {
+  let entry = {
+    use _ <- decode.field("type", public_key_credential_type_decoder())
+    use alg <- decode.field("alg", algorithm_decoder())
+    decode.success(alg)
+  }
+  decode.list(entry) |> decode.then(require_non_empty_algorithms)
+}
+
+fn require_non_empty_algorithms(
+  algs: List(Algorithm),
+) -> decode.Decoder(List(Algorithm)) {
+  case algs {
+    [] -> decode.failure([], "non-empty pubKeyCredParams")
+    _ -> decode.success(algs)
+  }
 }
 
 fn authenticator_selection_decoder() -> decode.Decoder(
@@ -592,10 +745,12 @@ fn requirement_decoder() -> decode.Decoder(Requirement) {
 /// Start the WebAuthn registration ceremony.
 ///
 /// Takes options parsed with [`registration_options_decoder`](#registration_options_decoder),
-/// then calls `navigator.credentials.create`. Returns a promise resolving to
-/// the credential response as a `Json` value. Stringify with
-/// `json.to_string` before sending to glasslock's `registration.verify`, or
-/// embed under a key in a larger envelope.
+/// then calls `navigator.credentials.create`. Returns a promise resolving
+/// to the credential response as a `Json` value. Send the JSON string to
+/// `glasslock/registration.verify_json`, or embed it in a larger envelope
+/// and decode it server-side with
+/// `glasslock/registration.response_decoder()` before calling
+/// `glasslock/registration.verify`.
 pub fn start_registration(
   options: RegistrationOptions,
 ) -> Promise(Result(Json, Error)) {

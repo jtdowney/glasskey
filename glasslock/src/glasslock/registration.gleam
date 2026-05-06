@@ -237,12 +237,20 @@ pub fn allow_cross_origin(builder: Builder, allow: Bool) -> Builder {
 }
 
 /// Replace the list of accepted signing algorithms, in preference order
-/// (the authenticator picks the first it supports). Must be non-empty.
+/// (the authenticator picks the first it supports). Returns `Error(Nil)`
+/// if the list is empty.
+///
 /// Defaults to `[Es256]` because it is the one algorithm every mainstream
 /// authenticator handles; opt in to `Ed25519` or `Rs256` when broader
 /// coverage is desired.
-pub fn algorithms(builder: Builder, algorithms: List(Algorithm)) -> Builder {
-  Builder(..builder, algorithms:)
+pub fn algorithms(
+  builder: Builder,
+  algorithms: List(Algorithm),
+) -> Result(Builder, Nil) {
+  case algorithms {
+    [] -> Error(Nil)
+    _ -> Ok(Builder(..builder, algorithms:))
+  }
 }
 
 /// Add a credential to the `exclude_credentials` list (prevent
@@ -322,7 +330,10 @@ pub fn parse_challenge(encoded: String) -> Result(Challenge, Error) {
     )),
   )
   use algorithms <- result.try(list.try_map(cose_algs, algorithm_from_cose))
-  Ok(Challenge(data:, algorithms:))
+  case algorithms {
+    [] -> Error(ParseError("Challenge has no algorithms"))
+    _ -> Ok(Challenge(data:, algorithms:))
+  }
 }
 
 /// Generate registration options and a challenge verifier from a builder.

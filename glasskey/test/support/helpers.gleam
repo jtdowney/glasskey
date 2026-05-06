@@ -22,6 +22,7 @@ pub type GetSnapshot {
     user_verification: Option(String),
     allow_credential_count: Int,
     allow_credential_transports: List(List(String)),
+    mediation: Option(String),
   )
 }
 
@@ -69,6 +70,9 @@ pub fn set_create_plain_error_with_cause(
   message message: String,
   cause cause: String,
 ) -> Nil
+
+@external(javascript, "../glasskey_test_ffi.mjs", "deleteDomException")
+pub fn delete_dom_exception() -> Nil
 
 @external(javascript, "../glasskey_test_ffi.mjs", "setGetCredential")
 pub fn set_get_credential(

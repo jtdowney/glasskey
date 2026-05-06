@@ -91,11 +91,12 @@ case authentication.parse_response(response_json) {
 
 Each user can register multiple passkeys. After registration, store per passkey:
 
-| Field           | Source                                                     |
-| --------------- | ---------------------------------------------------------- |
-| `credential_id` | `credential.id`                                            |
-| `public_key`    | `credential.public_key`                                    |
-| `sign_count`    | `credential.sign_count`. Update after each authentication. |
+| Field           | Source                                                                                                                                           |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `credential_id` | `credential.id`                                                                                                                                  |
+| `public_key`    | `glasslock.encode_public_key(credential.public_key)`. Rehydrate with `glasslock.parse_public_key` before calling `verify`.                       |
+| `sign_count`    | `credential.sign_count`. Update after each authentication.                                                                                       |
+| `transports`    | `credential.transports`. Pass back to `registration.exclude_credential` and `authentication.allow_credential` so the browser can route requests. |
 
 ## Supported Features
 

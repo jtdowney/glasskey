@@ -25,6 +25,7 @@ class FakeDOMException extends Error {
 let originalState = null;
 let lastCreateOptions = null;
 let lastGetOptions = null;
+let lastGetMediation = null;
 let lastGetSignal = null;
 let createBehavior = { kind: "credential", value: null };
 let getBehavior = { kind: "credential", value: null };
@@ -87,6 +88,7 @@ function makeFakeCredentials() {
     },
     async get(options) {
       lastGetOptions = options.publicKey;
+      lastGetMediation = options.mediation ?? null;
       lastGetSignal = options.signal ?? null;
       return runBehavior(getBehavior);
     },
@@ -104,6 +106,7 @@ export function installFakeNavigator() {
 
   lastCreateOptions = null;
   lastGetOptions = null;
+  lastGetMediation = null;
   lastGetSignal = null;
   createBehavior = { kind: "credential", value: null };
   getBehavior = { kind: "credential", value: null };
@@ -170,6 +173,7 @@ export function uninstallFakeNavigator() {
   originalState = null;
   lastCreateOptions = null;
   lastGetOptions = null;
+  lastGetMediation = null;
   lastGetSignal = null;
 }
 
@@ -216,6 +220,10 @@ export function setCreateDomException(name, message) {
 
 export function setCreatePlainError(message) {
   createBehavior = { kind: "throw", error: new Error(message) };
+}
+
+export function deleteDomException() {
+  delete globalThis.DOMException;
 }
 
 export function setCreatePlainErrorWithCause(message, cause) {
@@ -330,6 +338,7 @@ export function lastGetSnapshot() {
       optionalString(pk.userVerification),
       pk.allowCredentials?.length ?? 0,
       descriptorTransportsList(pk.allowCredentials),
+      optionalString(lastGetMediation),
     ),
   );
 }

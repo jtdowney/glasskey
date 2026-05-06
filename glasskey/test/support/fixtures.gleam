@@ -1,6 +1,6 @@
-//// Frozen JSON fixtures mirroring what `glasslock/registration.request` and
-//// `glasslock/authentication.request` emit (per
-//// `glasslock/birdie_snapshots/glasslock_*_request_emits_compat_json.accepted`,
+//// Frozen JSON fixtures mirroring what `glasslock/registration.build` and
+//// `glasslock/authentication.build` emit (per
+//// `glasslock/test/birdie_snapshots/glasslock_*_request_emits_compat_json.accepted`,
 //// with the redacted challenge swapped for a deterministic base64url value
 //// so the decoders run). If those glasslock snapshots change, update these
 //// builders and re-accept the matching glasskey snapshots.
