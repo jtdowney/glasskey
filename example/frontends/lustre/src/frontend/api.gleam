@@ -57,7 +57,7 @@ pub fn register_complete(
 }
 
 fn decode_login_result(
-  result: Result(Response(String), rsvp.Error),
+  result: Result(Response(String), rsvp.Error(String)),
 ) -> Result(String, String) {
   let decoder = {
     use verified <- decode.field("verified", decode.bool)
@@ -72,7 +72,7 @@ fn decode_login_result(
 }
 
 fn decode_response(
-  result: Result(Response(String), rsvp.Error),
+  result: Result(Response(String), rsvp.Error(String)),
   decoder: decode.Decoder(a),
 ) -> Result(a, String) {
   case result {
@@ -98,19 +98,19 @@ fn decode_response(
 }
 
 fn decode_register_begin(
-  result: Result(Response(String), rsvp.Error),
+  result: Result(Response(String), rsvp.Error(String)),
 ) -> Result(glasskey.RegistrationOptions, String) {
   decode_options(result, glasskey.registration_options_decoder())
 }
 
 fn decode_login_begin(
-  result: Result(Response(String), rsvp.Error),
+  result: Result(Response(String), rsvp.Error(String)),
 ) -> Result(glasskey.AuthenticationOptions, String) {
   decode_options(result, glasskey.authentication_options_decoder())
 }
 
 fn decode_options(
-  result: Result(Response(String), rsvp.Error),
+  result: Result(Response(String), rsvp.Error(String)),
   options_decoder: decode.Decoder(a),
 ) -> Result(a, String) {
   let decoder = {
@@ -121,7 +121,7 @@ fn decode_options(
 }
 
 fn decode_verified(
-  result: Result(Response(String), rsvp.Error),
+  result: Result(Response(String), rsvp.Error(String)),
 ) -> Result(Nil, String) {
   let decoder = {
     use verified <- decode.field("verified", decode.bool)
