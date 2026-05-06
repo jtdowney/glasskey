@@ -1044,7 +1044,8 @@ pub fn verify_discoverable_flow_test() {
       user_handle: option.None,
     )
 
-  let assert Ok(info) = authentication.parse_response(response_json)
+  let assert Ok(response) = authentication.parse_response_json(response_json)
+  let assert Ok(info) = authentication.response_info(response)
   assert info.credential_id == stored_credential.id
 
   let assert Ok(cred) =
@@ -1075,7 +1076,8 @@ pub fn parse_response_roundtrip_test() {
       user_handle: user_handle_json,
     )
 
-  let assert Ok(info) = authentication.parse_response(response_json)
+  let assert Ok(response) = authentication.parse_response_json(response_json)
+  let assert Ok(info) = authentication.response_info(response)
   assert info.credential_id == credential_id
   assert info.user_handle == user_handle
 }
@@ -1090,7 +1092,8 @@ pub fn parse_response_handles_null_user_handle_test() {
       user_handle: option.Some(json.null()),
     )
 
-  let assert Ok(info) = authentication.parse_response(response_json)
+  let assert Ok(response) = authentication.parse_response_json(response_json)
+  let assert Ok(info) = authentication.response_info(response)
   assert info.user_handle == option.None
 }
 
@@ -1104,12 +1107,13 @@ pub fn parse_response_errors_on_invalid_user_handle_base64_test() {
       user_handle: option.Some(json.string("!!!invalid-base64!!!")),
     )
 
-  assert authentication.parse_response(response_json)
+  let assert Ok(response) = authentication.parse_response_json(response_json)
+  assert authentication.response_info(response)
     == Error(authentication.ParseError("Invalid base64url in userHandle"))
 }
 
 pub fn parse_response_rejects_invalid_json_test() {
-  assert authentication.parse_response("{bad")
+  assert authentication.parse_response_json("{bad")
     == Error(authentication.ParseError("Invalid authentication response JSON"))
 }
 
@@ -1127,7 +1131,8 @@ pub fn parse_response_rejects_id_raw_id_mismatch_test() {
       user_handle: option.None,
     ))
 
-  assert authentication.parse_response(response_json)
+  let assert Ok(response) = authentication.parse_response_json(response_json)
+  assert authentication.response_info(response)
     == Error(authentication.VerificationMismatch(glasslock.CredentialIdField))
 }
 

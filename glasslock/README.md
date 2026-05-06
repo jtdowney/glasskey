@@ -72,19 +72,14 @@ case authentication.verify_json(response_json:, challenge:, stored: stored_crede
 
 ### Discoverable Credentials (Passkeys)
 
-For discoverable credentials where the user doesn't provide a username upfront, use `parse_response` to extract credential info for lookup:
+For discoverable credentials where the user doesn't provide a username upfront, parse the response with `parse_response_json`, extract lookup info with `response_info`, then verify the parsed `Response`:
 
 ```gleam
-case authentication.parse_response(response_json) {
-  Ok(info) -> {
-    // Look up stored credential by info.credential_id or info.user_handle
-    case lookup_credential(info.credential_id) {
-      Ok(stored) -> authentication.verify_json(response_json:, challenge:, stored:)
-      Error(_) -> todo as "handle lookup error"
-    }
-  }
-  Error(_) -> todo as "handle parse error"
-}
+use response <- result.try(authentication.parse_response_json(response_json))
+use info <- result.try(authentication.response_info(response))
+// Look up stored credential by info.credential_id or info.user_handle
+use stored <- result.try(lookup_credential(info.credential_id))
+authentication.verify(response:, challenge:, stored:)
 ```
 
 ## Storing Credentials

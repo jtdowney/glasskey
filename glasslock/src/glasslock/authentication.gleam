@@ -40,22 +40,14 @@
 ////   )
 ////   |> authentication.build()
 ////
-//// // Parse response to get credential_id for lookup. As above, keep
-//// // `challenge` in memory for a single node, or round-trip through
-//// // `authentication.encode_challenge` / `authentication.parse_challenge`
-//// // to span processes.
-//// case authentication.parse_response(response_json) {
-////   Ok(info) ->
-////     case lookup_credential(info.credential_id) {
-////       Ok(stored) ->
-////         case authentication.verify_json(response_json:, challenge:, stored:) {
-////           Ok(updated) -> todo as "update stored sign_count"
-////           Error(e) -> todo as "handle verification error"
-////         }
-////       Error(e) -> todo as "handle lookup error"
-////     }
-////   Error(e) -> todo as "handle parse error"
-//// }
+//// // Parse the response, look up the credential, then verify with the
+//// // same parsed `Response`. As above, keep `challenge` in memory for
+//// // a single node, or round-trip through `authentication.encode_challenge`
+//// // / `authentication.parse_challenge` to span processes.
+//// use response <- result.try(authentication.parse_response_json(response_json))
+//// use info <- result.try(authentication.response_info(response))
+//// use stored <- result.try(lookup_credential(info.credential_id))
+//// authentication.verify(response:, challenge:, stored:)
 //// ```
 
 import glasslock
@@ -442,14 +434,6 @@ pub fn response_info(response: Response) -> Result(ResponseInfo, Error) {
   internal.decode_optional_base64url(parsed.user_handle, "userHandle")
   |> result.map(ResponseInfo(raw_id, _))
   |> wrap_error
-}
-
-/// Convenience wrapper around `parse_response_json` +
-/// [`response_info`](#response_info) for callers whose response arrives as a
-/// raw string. Use during the discoverable flow to look up the stored
-/// credential before calling [`verify_json`](#verify_json).
-pub fn parse_response(response_json: String) -> Result(ResponseInfo, Error) {
-  parse_response_json(response_json) |> result.try(response_info)
 }
 
 /// Verify a challenge response from the browser.
