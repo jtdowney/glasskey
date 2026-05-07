@@ -550,12 +550,12 @@ pub fn authentication_options_decoder() -> decode.Decoder(AuthenticationOptions)
   use timeout <- decode.optional_field(
     "timeout",
     option.None,
-    decode.map(decode.int, option.Some),
+    decode.optional(decode.int),
   )
   use user_verification <- decode.optional_field(
     "userVerification",
     option.None,
-    decode.map(requirement_decoder(), option.Some),
+    decode.optional(requirement_decoder()),
   )
   use allow_credentials <- decode.optional_field(
     "allowCredentials",
@@ -594,7 +594,7 @@ pub fn registration_options_decoder() -> decode.Decoder(RegistrationOptions) {
   use timeout <- decode.optional_field(
     "timeout",
     option.None,
-    decode.map(decode.int, option.Some),
+    decode.optional(decode.int),
   )
   use #(resident_key, user_verification, authenticator_attachment) <- decode.optional_field(
     "authenticatorSelection",
@@ -657,12 +657,12 @@ fn authenticator_selection_decoder() -> decode.Decoder(
   use resident_key <- decode.optional_field(
     "residentKey",
     option.None,
-    decode.map(requirement_decoder(), option.Some),
+    decode.optional(requirement_decoder()),
   )
   use user_verification <- decode.optional_field(
     "userVerification",
     option.None,
-    decode.map(requirement_decoder(), option.Some),
+    decode.optional(requirement_decoder()),
   )
   use authenticator_attachment <- decode.optional_field(
     "authenticatorAttachment",

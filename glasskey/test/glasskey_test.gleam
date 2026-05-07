@@ -336,6 +336,52 @@ pub fn decode_registration_options_authenticator_selection_inner_omitted_test() 
   assert opt.authenticator_attachment == option.None
 }
 
+pub fn decode_registration_options_explicit_null_optional_fields_test() {
+  let dyn =
+    dynamic.properties([
+      #(dynamic.string("challenge"), dynamic.string("dGVzdA")),
+      #(
+        dynamic.string("rp"),
+        dynamic.properties([
+          #(dynamic.string("id"), dynamic.string("example.com")),
+          #(dynamic.string("name"), dynamic.string("App")),
+        ]),
+      ),
+      #(
+        dynamic.string("user"),
+        dynamic.properties([
+          #(dynamic.string("id"), dynamic.string("dQ")),
+          #(dynamic.string("name"), dynamic.string("u")),
+          #(dynamic.string("displayName"), dynamic.string("U")),
+        ]),
+      ),
+      #(
+        dynamic.string("pubKeyCredParams"),
+        dynamic.array([
+          dynamic.properties([
+            #(dynamic.string("type"), dynamic.string("public-key")),
+            #(dynamic.string("alg"), dynamic.int(-7)),
+          ]),
+        ]),
+      ),
+      #(dynamic.string("timeout"), dynamic.nil()),
+      #(
+        dynamic.string("authenticatorSelection"),
+        dynamic.properties([
+          #(dynamic.string("residentKey"), dynamic.nil()),
+          #(dynamic.string("userVerification"), dynamic.nil()),
+        ]),
+      ),
+    ])
+
+  let assert Ok(opt) = decode.run(dyn, glasskey.registration_options_decoder())
+  let opt = glasskey.registration_options_fields(opt)
+
+  assert opt.timeout == option.None
+  assert opt.resident_key == option.None
+  assert opt.user_verification == option.None
+}
+
 pub fn decode_registration_options_missing_required_fields_test() {
   let assert Error(_) =
     decode.run(dynamic.properties([]), glasskey.registration_options_decoder())
@@ -559,6 +605,24 @@ pub fn decode_authentication_options_minimal_test() {
   assert opt.timeout == option.None
   assert opt.user_verification == option.None
   assert opt.allow_credentials == []
+}
+
+pub fn decode_authentication_options_explicit_null_optional_fields_test() {
+  let dyn =
+    dynamic.properties([
+      #(dynamic.string("challenge"), dynamic.string("dGVzdA")),
+      #(dynamic.string("rpId"), dynamic.nil()),
+      #(dynamic.string("timeout"), dynamic.nil()),
+      #(dynamic.string("userVerification"), dynamic.nil()),
+    ])
+
+  let assert Ok(opt) =
+    decode.run(dyn, glasskey.authentication_options_decoder())
+  let opt = glasskey.authentication_options_fields(opt)
+
+  assert opt.rp_id == option.None
+  assert opt.timeout == option.None
+  assert opt.user_verification == option.None
 }
 
 pub fn decode_authentication_options_invalid_allow_credentials_type_test() {
