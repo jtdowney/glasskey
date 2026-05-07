@@ -214,9 +214,10 @@ pub type Error {
   /// Security policy violation (e.g., non-HTTPS origin or invalid
   /// relying party ID for this origin).
   SecurityError
-  /// The operation conflicted with the authenticator's state, most
-  /// commonly because a credential the authenticator can satisfy is
-  /// already registered (matched by `excludeCredentials`).
+  /// The operation conflicted with the authenticator's state. During
+  /// registration this typically means a credential matched by
+  /// `excludeCredentials` is already present; during authentication it
+  /// can mean the credential has been invalidated on the authenticator.
   InvalidState
   /// An unexpected error from the browser API.
   UnknownError(String)
