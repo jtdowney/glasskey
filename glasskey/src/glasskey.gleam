@@ -173,6 +173,7 @@ pub fn transport_to_string(transport: Transport) -> String {
 pub fn translate_dom_exception(name: String, message: String) -> Error {
   case name {
     "NotSupportedError" -> NotSupported
+    "ConstraintError" -> NotSupported
     "NotAllowedError" -> NotAllowed
     "AbortError" -> Aborted
     "SecurityError" -> SecurityError
@@ -204,7 +205,7 @@ pub type ConditionalAuthentication {
 
 /// Errors returned by glasskey operations.
 pub type Error {
-  /// The browser does not support WebAuthn.
+  /// The browser or authenticator does not support what was requested.
   NotSupported
   /// The user cancelled the request or the operation timed out.
   NotAllowed

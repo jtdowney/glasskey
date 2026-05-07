@@ -848,6 +848,7 @@ pub fn start_registration_returns_not_allowed_when_user_dismisses_test() {
 pub fn translate_dom_exception_test() {
   let cases = [
     #("NotSupportedError", "boom", glasskey.NotSupported),
+    #("ConstraintError", "resident key required", glasskey.NotSupported),
     #("NotAllowedError", "boom", glasskey.NotAllowed),
     #("AbortError", "boom", glasskey.Aborted),
     #("SecurityError", "boom", glasskey.SecurityError),
