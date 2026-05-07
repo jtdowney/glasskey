@@ -22,7 +22,7 @@ fn non_empty_list_from(
   qcheck.map2(element, qcheck.list_from(element), fn(x, xs) { [x, ..xs] })
 }
 
-fn user_verification_generator() -> qcheck.Generator(glasslock.UserVerification) {
+fn user_verification_generator() -> qcheck.Generator(glasslock.Verification) {
   qcheck.from_generators(qcheck.return(glasslock.VerificationRequired), [
     qcheck.return(glasslock.VerificationPreferred),
     qcheck.return(glasslock.VerificationDiscouraged),
@@ -52,7 +52,7 @@ fn credential_descriptor_generator() -> qcheck.Generator(
 type AuthSetup {
   AuthSetup(
     stored_sign_count: Int,
-    user_verification: glasslock.UserVerification,
+    user_verification: glasslock.Verification,
     allow_cross_origin: Bool,
     allowed_top_origins: List(String),
     allow_credentials_override: option.Option(

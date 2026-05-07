@@ -42,7 +42,7 @@ pub type ChallengeData {
     bytes: BitArray,
     origins: Set(String),
     rp_id: String,
-    user_verification: glasslock.UserVerification,
+    user_verification: glasslock.Verification,
     allow_cross_origin: Bool,
     allowed_top_origins: List(String),
   )
@@ -428,7 +428,7 @@ fn map_gose_error(err: gose.GoseError) -> Error {
 }
 
 pub fn user_verification_to_string(
-  verification: glasslock.UserVerification,
+  verification: glasslock.Verification,
 ) -> String {
   case verification {
     glasslock.VerificationRequired -> "required"
@@ -439,7 +439,7 @@ pub fn user_verification_to_string(
 
 fn user_verification_from_string(
   value: String,
-) -> Result(glasslock.UserVerification, Error) {
+) -> Result(glasslock.Verification, Error) {
   case value {
     "required" -> Ok(glasslock.VerificationRequired)
     "preferred" -> Ok(glasslock.VerificationPreferred)
@@ -608,7 +608,7 @@ pub fn verify_rp_id(
 pub fn verify_user_policies(
   user_present: Bool,
   user_verified: Bool,
-  verification: glasslock.UserVerification,
+  verification: glasslock.Verification,
 ) -> Result(Nil, Error) {
   use <- bool.guard(when: !user_present, return: Error(UserPresenceFailed))
 

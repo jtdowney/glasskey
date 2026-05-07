@@ -133,7 +133,7 @@ pub opaque type Builder {
     timeout: Duration,
     authenticator_attachment: Option(AuthenticatorAttachment),
     resident_key: Option(ResidentKey),
-    user_verification: Option(glasslock.UserVerification),
+    user_verification: Option(glasslock.Verification),
     allow_cross_origin: Bool,
     algorithms: List(Algorithm),
     exclude_credentials: List(#(BitArray, List(glasslock.Transport))),
@@ -226,7 +226,7 @@ pub fn resident_key(builder: Builder, resident_key: ResidentKey) -> Builder {
 /// of `preferred`, and [`verify`](#verify) treats the policy as `preferred`.
 pub fn user_verification(
   builder: Builder,
-  user_verification: glasslock.UserVerification,
+  user_verification: glasslock.Verification,
 ) -> Builder {
   Builder(..builder, user_verification: option.Some(user_verification))
 }
@@ -472,7 +472,7 @@ fn maybe_add_resident_key(
 
 fn maybe_add_user_verification(
   fields: List(#(String, Json)),
-  user_verification: Option(glasslock.UserVerification),
+  user_verification: Option(glasslock.Verification),
 ) -> List(#(String, Json)) {
   case user_verification {
     option.None -> fields

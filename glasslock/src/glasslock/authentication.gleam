@@ -110,7 +110,7 @@ pub opaque type Builder {
     relying_party_id: String,
     origins: List(String),
     timeout: Duration,
-    user_verification: Option(glasslock.UserVerification),
+    user_verification: Option(glasslock.Verification),
     allow_cross_origin: Bool,
     allow_credentials: List(#(BitArray, List(glasslock.Transport))),
     allowed_top_origins: List(String),
@@ -186,7 +186,7 @@ pub fn timeout(builder: Builder, timeout: Duration) -> Builder {
 /// of `preferred`.
 pub fn user_verification(
   builder: Builder,
-  user_verification: glasslock.UserVerification,
+  user_verification: glasslock.Verification,
 ) -> Builder {
   Builder(..builder, user_verification: option.Some(user_verification))
 }
@@ -360,7 +360,7 @@ pub fn build(builder: Builder) -> #(Json, Challenge) {
 
 fn maybe_add_user_verification(
   fields: List(#(String, json.Json)),
-  user_verification: Option(glasslock.UserVerification),
+  user_verification: Option(glasslock.Verification),
 ) -> List(#(String, json.Json)) {
   case user_verification {
     option.None -> fields

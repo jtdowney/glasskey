@@ -59,9 +59,9 @@ import gleam/result
 import gose
 import gose/cose
 
-/// User verification requirement for the authenticator.
-pub type UserVerification {
-  /// The authenticator must verify the user (e.g., biometric or PIN).
+/// User-verification policy for a ceremony.
+pub type Verification {
+  /// Reject unless the authenticator verifies the user with a biometric or PIN.
   VerificationRequired
   /// Request verification, but accept a response without it.
   VerificationPreferred

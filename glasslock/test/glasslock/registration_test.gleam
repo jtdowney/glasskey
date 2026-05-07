@@ -26,7 +26,7 @@ fn non_empty_list_from(
   qcheck.map2(element, qcheck.list_from(element), fn(x, xs) { [x, ..xs] })
 }
 
-fn user_verification_generator() -> qcheck.Generator(glasslock.UserVerification) {
+fn user_verification_generator() -> qcheck.Generator(glasslock.Verification) {
   qcheck.from_generators(qcheck.return(glasslock.VerificationRequired), [
     qcheck.return(glasslock.VerificationPreferred),
     qcheck.return(glasslock.VerificationDiscouraged),
@@ -59,7 +59,7 @@ fn setup_challenge() -> registration.Challenge {
 }
 
 fn setup_challenge_with_verification(
-  uv: glasslock.UserVerification,
+  uv: glasslock.Verification,
 ) -> registration.Challenge {
   let #(_, challenge) =
     default_builder()
