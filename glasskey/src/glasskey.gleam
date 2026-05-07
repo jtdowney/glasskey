@@ -470,9 +470,9 @@ fn to_get_options(options: AuthenticationOptions) -> GetOptions {
   )
 }
 
-/// Check whether a platform authenticator (Touch ID, Windows Hello, etc.) is available.
+/// Check whether the browser supports a platform authenticator (Touch ID, Windows Hello, etc.).
 @external(javascript, "./glasskey_ffi.mjs", "platformAuthenticatorIsAvailable")
-pub fn platform_authenticator_available() -> Promise(Bool)
+pub fn supports_platform_authenticator() -> Promise(Bool)
 
 /// Check whether the browser supports WebAuthn.
 ///
@@ -488,18 +488,21 @@ fn encode_authentication_response(
   credential: AuthenticationCredential,
 ) -> Json {
   let base_fields = [
-    #("clientDataJSON", b64_json(credential.client_data_json)),
-    #("authenticatorData", b64_json(credential.authenticator_data)),
-    #("signature", b64_json(credential.signature)),
+    #("clientDataJSON", base64url_json(credential.client_data_json)),
+    #("authenticatorData", base64url_json(credential.authenticator_data)),
+    #("signature", base64url_json(credential.signature)),
   ]
   let response_fields = case credential.user_handle {
-    option.Some(handle) -> [#("userHandle", b64_json(handle)), ..base_fields]
+    option.Some(handle) -> [
+      #("userHandle", base64url_json(handle)),
+      ..base_fields
+    ]
     option.None -> base_fields
   }
 
   json.object([
     #("id", json.string(credential.id)),
-    #("rawId", b64_json(credential.raw_id)),
+    #("rawId", base64url_json(credential.raw_id)),
     #("type", json.string("public-key")),
     #("response", json.object(response_fields)),
   ])
@@ -507,8 +510,8 @@ fn encode_authentication_response(
 
 fn encode_registration_response(credential: RegistrationCredential) -> Json {
   let response_fields = [
-    #("clientDataJSON", b64_json(credential.client_data_json)),
-    #("attestationObject", b64_json(credential.attestation_object)),
+    #("clientDataJSON", base64url_json(credential.client_data_json)),
+    #("attestationObject", base64url_json(credential.attestation_object)),
   ]
   let response_fields = case credential.transports {
     [] -> response_fields
@@ -520,13 +523,13 @@ fn encode_registration_response(credential: RegistrationCredential) -> Json {
 
   json.object([
     #("id", json.string(credential.id)),
-    #("rawId", b64_json(credential.raw_id)),
+    #("rawId", base64url_json(credential.raw_id)),
     #("type", json.string("public-key")),
     #("response", json.object(response_fields)),
   ])
 }
 
-fn b64_json(bytes: BitArray) -> Json {
+fn base64url_json(bytes: BitArray) -> Json {
   json.string(bit_array.base64_url_encode(bytes, False))
 }
 
