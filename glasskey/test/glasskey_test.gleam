@@ -353,13 +353,29 @@ pub fn decode_registration_options_unknown_requirement_test() {
   let assert Error(_) = decode.run(dyn, glasskey.registration_options_decoder())
 }
 
-pub fn decode_registration_options_unknown_algorithm_test() {
+pub fn decode_registration_options_all_unknown_algorithms_test() {
   let dyn =
     build_registration_options(
-      RegistrationFixture(..default_registration_fixture(), algorithms: [-999]),
+      RegistrationFixture(..default_registration_fixture(), algorithms: [
+        -999, -1000,
+      ]),
     )
 
   let assert Error(_) = decode.run(dyn, glasskey.registration_options_decoder())
+}
+
+pub fn decode_registration_options_mixed_algorithms_filters_unknown_test() {
+  let dyn =
+    build_registration_options(
+      RegistrationFixture(..default_registration_fixture(), algorithms: [
+        -999, -7,
+      ]),
+    )
+
+  let assert Ok(options) =
+    decode.run(dyn, glasskey.registration_options_decoder())
+  assert glasskey.registration_options_fields(options).algorithms
+    == [glasskey.Es256]
 }
 
 pub fn decode_registration_options_empty_algorithms_test() {

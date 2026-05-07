@@ -618,25 +618,24 @@ pub fn registration_options_decoder() -> decode.Decoder(RegistrationOptions) {
   ))
 }
 
-fn algorithm_decoder() -> decode.Decoder(Algorithm) {
-  decode.int
-  |> decode.then(fn(alg) {
-    case alg {
-      -7 -> decode.success(Es256)
-      -8 -> decode.success(Ed25519)
-      -257 -> decode.success(Rs256)
-      _ -> decode.failure(Es256, "algorithm")
-    }
-  })
+fn algorithm_from_cose(alg: Int) -> Result(Algorithm, Nil) {
+  case alg {
+    -7 -> Ok(Es256)
+    -8 -> Ok(Ed25519)
+    -257 -> Ok(Rs256)
+    _ -> Error(Nil)
+  }
 }
 
 fn pub_key_cred_params_decoder() -> decode.Decoder(List(Algorithm)) {
   let entry = {
     use _ <- decode.field("type", public_key_credential_type_decoder())
-    use alg <- decode.field("alg", algorithm_decoder())
+    use alg <- decode.field("alg", decode.int)
     decode.success(alg)
   }
-  decode.list(entry) |> decode.then(require_non_empty_algorithms)
+  decode.list(entry)
+  |> decode.map(list.filter_map(_, algorithm_from_cose))
+  |> decode.then(require_non_empty_algorithms)
 }
 
 fn require_non_empty_algorithms(
