@@ -58,4 +58,4 @@ just deps    # Download all dependencies
 
 - [passkeys.dev](https://passkeys.dev) - developer-focused passkey documentation
 - [WebAuthn Guide](https://webauthn.guide) - interactive WebAuthn explainer
-- [W3C WebAuthn Spec](https://www.w3.org/TR/webauthn-2/) - full specification
+- [W3C WebAuthn Level 3](https://www.w3.org/TR/webauthn-3/) - full specification

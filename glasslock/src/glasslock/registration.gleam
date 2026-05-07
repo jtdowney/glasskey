@@ -5,8 +5,8 @@
 //// ```gleam
 //// import glasslock/registration
 ////
-//// // Generate options for browser
-//// let #(request_json, challenge) =
+//// // Generate options for the browser
+//// let #(options, challenge) =
 ////   registration.new(
 ////     relying_party: registration.RelyingParty(id: "example.com", name: "My App"),
 ////     user: registration.User(id: user_id, name: "john", display_name: "John"),
@@ -14,10 +14,11 @@
 ////   )
 ////   |> registration.build()
 ////
-//// // Send request_json to browser, receive response_json back. Keep
-//// // `challenge` in memory for a single-node deploy; to span processes
-//// // or nodes, serialize with `registration.encode_challenge` and hydrate
-//// // it back with `registration.parse_challenge`.
+//// // Serialize `options` and send to the browser; receive
+//// // response_json back. Keep `challenge` in memory for a single-node
+//// // deploy; to span processes or nodes, serialize with
+//// // `registration.encode_challenge` and hydrate it back with
+//// // `registration.parse_challenge`.
 ////
 //// // Verify the response
 //// case registration.verify_json(response_json:, challenge:) {

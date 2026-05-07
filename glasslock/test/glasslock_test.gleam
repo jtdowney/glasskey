@@ -2,17 +2,18 @@ import glasslock
 import glasslock/internal/cbor
 import glasslock/testing
 import gleam/list
+import gose
 import unitest
 
 pub fn main() -> Nil {
   unitest.main()
 }
 
-pub fn parse_public_key_round_trip_test() {
-  let generators = [
-    testing.generate_es256_keypair,
-    testing.generate_ed25519_keypair,
-    testing.generate_rs256_keypair,
+pub fn parse_public_key_round_trip_preserves_algorithm_test() {
+  let cases = [
+    #(testing.generate_es256_keypair, gose.Ecdsa(gose.EcdsaP256)),
+    #(testing.generate_ed25519_keypair, gose.Eddsa),
+    #(testing.generate_rs256_keypair, gose.RsaPkcs1(gose.RsaPkcs1Sha256)),
   ]
 
   list.each(cases, fn(test_case) {
@@ -152,6 +153,42 @@ pub fn parse_public_key_rejects_non_bytes_x_test() {
       #(cbor.Int(-1), cbor.Int(1)),
       #(cbor.Int(-2), cbor.Int(42)),
       #(cbor.Int(-3), cbor.Bytes(<<0:256>>)),
+    ])
+  let cbor_bytes = cbor.encode(cose_map)
+  let assert Error(glasslock.InvalidPublicKey(_)) =
+    glasslock.parse_public_key(cbor_bytes)
+}
+
+pub fn parse_public_key_rejects_okp_missing_curve_test() {
+  let cose_map =
+    cbor.Map([
+      #(cbor.Int(1), cbor.Int(1)),
+      #(cbor.Int(3), cbor.Int(-8)),
+      #(cbor.Int(-2), cbor.Bytes(<<0:256>>)),
+    ])
+  let cbor_bytes = cbor.encode(cose_map)
+  let assert Error(glasslock.InvalidPublicKey(_)) =
+    glasslock.parse_public_key(cbor_bytes)
+}
+
+pub fn parse_public_key_rejects_rsa_missing_n_test() {
+  let cose_map =
+    cbor.Map([
+      #(cbor.Int(1), cbor.Int(3)),
+      #(cbor.Int(3), cbor.Int(-257)),
+      #(cbor.Int(-2), cbor.Bytes(<<1, 0, 1>>)),
+    ])
+  let cbor_bytes = cbor.encode(cose_map)
+  let assert Error(glasslock.InvalidPublicKey(_)) =
+    glasslock.parse_public_key(cbor_bytes)
+}
+
+pub fn parse_public_key_rejects_rsa_missing_e_test() {
+  let cose_map =
+    cbor.Map([
+      #(cbor.Int(1), cbor.Int(3)),
+      #(cbor.Int(3), cbor.Int(-257)),
+      #(cbor.Int(-1), cbor.Bytes(<<0:2048>>)),
     ])
   let cbor_bytes = cbor.encode(cose_map)
   let assert Error(glasslock.InvalidPublicKey(_)) =

@@ -410,9 +410,9 @@ type User {
 ///
 /// Takes options parsed with [`authentication_options_decoder`](#authentication_options_decoder),
 /// then calls `navigator.credentials.get`. Returns a promise resolving to
-/// the assertion response as a `Json` value. Send the JSON string to
-/// `glasslock/authentication.verify_json`, or embed it in a larger
-/// envelope and decode it server-side with
+/// the assertion response as a `Json` value. Serialize and send to your
+/// server (e.g. as the body to `glasslock/authentication.verify_json`),
+/// or embed it in a larger envelope and decode it server-side with
 /// `glasslock/authentication.response_decoder()` before calling
 /// `glasslock/authentication.verify`.
 pub fn start_authentication(
@@ -746,9 +746,10 @@ fn requirement_decoder() -> decode.Decoder(Requirement) {
 ///
 /// Takes options parsed with [`registration_options_decoder`](#registration_options_decoder),
 /// then calls `navigator.credentials.create`. Returns a promise resolving
-/// to the credential response as a `Json` value. Send the JSON string to
-/// `glasslock/registration.verify_json`, or embed it in a larger envelope
-/// and decode it server-side with
+/// to the credential response as a `Json` value. Serialize and send to
+/// your server (e.g. as the body to
+/// `glasslock/registration.verify_json`), or embed it in a larger
+/// envelope and decode it server-side with
 /// `glasslock/registration.response_decoder()` before calling
 /// `glasslock/registration.verify`.
 pub fn start_registration(

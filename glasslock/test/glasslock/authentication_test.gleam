@@ -295,6 +295,29 @@ pub fn verify_valid_authentication_test() {
   assert cred.public_key == stored_credential.public_key
 }
 
+pub fn verify_via_decoded_pipeline_test() {
+  let #(challenge, stored_credential, keypair) = setup_authentication()
+
+  let response =
+    testing.build_authentication_response(
+      challenge:,
+      credential_id: stored_credential.id,
+      keypair:,
+      sign_count: 1,
+    )
+  let response_json = testing.to_authentication_json(response)
+
+  let assert Ok(parsed) = authentication.parse_response_json(response_json)
+  let assert Ok(cred) =
+    authentication.verify(
+      response: parsed,
+      challenge:,
+      stored: stored_credential,
+      user: authentication.AlreadyIdentifiedUser(<<1, 2, 3, 4>>),
+    )
+  assert cred.id == stored_credential.id
+  assert cred.sign_count == 1
+}
 
 pub fn verify_valid_authentication_ed25519_test() {
   let #(challenge, stored_credential, keypair) =
@@ -1049,11 +1072,7 @@ pub fn verify_discoverable_flow_test() {
   assert info.credential_id == stored_credential.id
 
   let assert Ok(cred) =
-    authentication.verify_json(
-      response_json:,
-      challenge:,
-      stored: stored_credential,
-    )
+    authentication.verify(response:, challenge:, stored: stored_credential)
   assert cred.sign_count == 1
 }
 

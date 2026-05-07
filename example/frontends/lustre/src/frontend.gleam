@@ -208,11 +208,11 @@ fn update_login(
       login_model(model.LoginReady(status: "Error: " <> message), username),
       effect.none(),
     )
-    model.LoginSettingUpConditional, model.ConditionalAuthStarted(Ok(Nil)) -> #(
-      login_model(model.LoginConditional, username),
-      effect.none(),
-    )
-    model.LoginSettingUpConditional, model.ConditionalAuthStarted(Error(error))
+    model.LoginSettingUpConditional,
+      model.BrowserStartedConditionalAuth(Ok(Nil))
+    -> #(login_model(model.LoginConditional, username), effect.none())
+    model.LoginSettingUpConditional,
+      model.BrowserStartedConditionalAuth(Error(error))
     -> #(
       login_model(
         model.LoginReady(status: "Error: " <> glasskey_error_to_string(error)),
@@ -308,14 +308,15 @@ fn start_conditional_authentication_effect(
     case glasskey.start_conditional_authentication(options) {
       Ok(conditional) -> {
         set_pending_abort(conditional.abort)
-        dispatch(model.ConditionalAuthStarted(Ok(Nil)))
+        dispatch(model.BrowserStartedConditionalAuth(Ok(Nil)))
         conditional.result
         |> promise.map(fn(r) {
           dispatch(model.AuthenticatorFinishedConditionalLogin(r))
         })
         Nil
       }
-      Error(error) -> dispatch(model.ConditionalAuthStarted(Error(error)))
+      Error(error) ->
+        dispatch(model.BrowserStartedConditionalAuth(Error(error)))
     }
   })
 }

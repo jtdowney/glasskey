@@ -13,7 +13,7 @@
 //// ```gleam
 //// import glasslock/registration
 ////
-//// let #(request_json, challenge) =
+//// let #(options, challenge) =
 ////   registration.new(
 ////     relying_party: registration.RelyingParty(id: "example.com", name: "My App"),
 ////     user: registration.User(id: user_id, name: username, display_name: username),
@@ -21,9 +21,9 @@
 ////   )
 ////   |> registration.build()
 ////
-//// // Send request_json to browser. Keep `challenge` in memory for a
-//// // single-node deploy; to span processes or nodes, serialize with
-//// // `registration.encode_challenge` and recover with
+//// // Serialize `options` and send to the browser. Keep `challenge`
+//// // in memory for a single-node deploy; to span processes or nodes,
+//// // serialize with `registration.encode_challenge` and recover with
 //// // `registration.parse_challenge`.
 ////
 //// case registration.verify_json(response_json:, challenge:) {
@@ -37,16 +37,16 @@
 //// ```gleam
 //// import glasslock/authentication
 ////
-//// let #(request_json, challenge) =
+//// let #(options, challenge) =
 ////   authentication.new(
 ////     relying_party_id: "example.com",
 ////     origin: "https://example.com",
 ////   )
 ////   |> authentication.build()
 ////
-//// // Send request_json to browser. Keep `challenge` in memory for a
-//// // single-node deploy; to span processes or nodes, serialize with
-//// // `authentication.encode_challenge` and recover with
+//// // Serialize `options` and send to the browser. Keep `challenge`
+//// // in memory for a single-node deploy; to span processes or nodes,
+//// // serialize with `authentication.encode_challenge` and recover with
 //// // `authentication.parse_challenge`.
 ////
 //// case authentication.verify_json(response_json:, challenge:, stored: stored_credential) {

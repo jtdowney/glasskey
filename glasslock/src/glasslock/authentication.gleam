@@ -5,8 +5,8 @@
 //// ```gleam
 //// import glasslock/authentication
 ////
-//// // Generate options for browser
-//// let #(request_json, challenge) =
+//// // Generate options for the browser
+//// let #(options, challenge) =
 ////   authentication.new(
 ////     relying_party_id: "example.com",
 ////     origin: "https://example.com",
@@ -17,10 +17,11 @@
 ////   )
 ////   |> authentication.build()
 ////
-//// // Send request_json to browser, receive response_json back. Keep
-//// // `challenge` in memory for a single-node deploy; to span processes
-//// // or nodes, serialize with `authentication.encode_challenge` and
-//// // hydrate it back with `authentication.parse_challenge`.
+//// // Serialize `options` and send to the browser; receive
+//// // response_json back. Keep `challenge` in memory for a single-node
+//// // deploy; to span processes or nodes, serialize with
+//// // `authentication.encode_challenge` and hydrate it back with
+//// // `authentication.parse_challenge`.
 ////
 //// // Verify the response
 //// case authentication.verify_json(response_json:, challenge:, stored: stored_credential) {
@@ -33,17 +34,18 @@
 ////
 //// ```gleam
 //// // No allow_credential calls = discoverable flow
-//// let #(request_json, challenge) =
+//// let #(options, challenge) =
 ////   authentication.new(
 ////     relying_party_id: "example.com",
 ////     origin: "https://example.com",
 ////   )
 ////   |> authentication.build()
 ////
-//// // Parse the response, look up the credential, then verify with the
-//// // same parsed `Response`. As above, keep `challenge` in memory for
-//// // a single node, or round-trip through `authentication.encode_challenge`
-//// // / `authentication.parse_challenge` to span processes.
+//// // Serialize `options` and send to the browser. Parse the response,
+//// // look up the credential, then verify with the same parsed
+//// // `Response`. As above, keep `challenge` in memory for a single
+//// // node, or round-trip through `authentication.encode_challenge` /
+//// // `authentication.parse_challenge` to span processes.
 //// use response <- result.try(authentication.parse_response_json(response_json))
 //// use info <- result.try(authentication.response_info(response))
 //// use stored <- result.try(lookup_credential(info.credential_id))

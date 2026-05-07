@@ -182,6 +182,17 @@ pub fn verify_valid_registration_test() {
   assert bit_array.byte_size(raw_public_key) > 0
 }
 
+pub fn verify_via_decoded_pipeline_test() {
+  let challenge = setup_challenge()
+  let response = testing.build_registration_response(challenge:)
+  let response_json = testing.to_registration_json(response)
+
+  let assert Ok(parsed) = registration.parse_response_json(response_json)
+  let assert Ok(cred) = registration.verify(response: parsed, challenge:)
+  assert cred.id == response.credential_id
+  assert cred.sign_count == 0
+}
+
 pub fn verify_stores_reported_transports_test() {
   let challenge = setup_challenge()
   let response = testing.build_registration_response(challenge:)

@@ -52,7 +52,7 @@ pub type Msg {
   BrowserReportedAutofillSupport(Bool)
   BackendBeganLogin(Result(glasskey.AuthenticationOptions, String))
   BackendBeganModalLogin(Result(glasskey.AuthenticationOptions, String))
-  ConditionalAuthStarted(Result(Nil, glasskey.Error))
+  BrowserStartedConditionalAuth(Result(Nil, glasskey.Error))
   AuthenticatorFinishedLogin(Result(Json, glasskey.Error))
   AuthenticatorFinishedConditionalLogin(Result(Json, glasskey.Error))
   BackendFinishedLogin(Result(String, String))
