@@ -15,19 +15,7 @@ import gleam/time/duration
 import kryptos/crypto
 import kryptos/hash
 import qcheck
-
-fn non_empty_list_from(
-  element: qcheck.Generator(a),
-) -> qcheck.Generator(List(a)) {
-  qcheck.map2(element, qcheck.list_from(element), fn(x, xs) { [x, ..xs] })
-}
-
-fn user_verification_generator() -> qcheck.Generator(glasslock.Verification) {
-  qcheck.from_generators(qcheck.return(glasslock.VerificationRequired), [
-    qcheck.return(glasslock.VerificationPreferred),
-    qcheck.return(glasslock.VerificationDiscouraged),
-  ])
-}
+import support/helpers
 
 fn transport_generator() -> qcheck.Generator(glasslock.Transport) {
   qcheck.from_generators(qcheck.return(glasslock.TransportUsb), [
@@ -1217,11 +1205,11 @@ pub fn sign_count_monotonicity_test() {
 pub fn encode_decode_roundtrip_preserves_challenge_test() {
   use inputs <- qcheck.given(qcheck.tuple6(
     qcheck.non_empty_string(),
-    non_empty_list_from(qcheck.non_empty_string()),
+    helpers.non_empty_list_from(qcheck.non_empty_string()),
     qcheck.list_from(credential_descriptor_generator()),
     qcheck.list_from(qcheck.non_empty_string()),
     qcheck.bool(),
-    user_verification_generator(),
+    helpers.user_verification_generator(),
   ))
   let #(
     relying_party_id,

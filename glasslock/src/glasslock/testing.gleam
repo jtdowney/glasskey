@@ -70,6 +70,7 @@ import kryptos/rsa
 pub opaque type KeyPair {
   KeyPair(key: cose.Key, alg: gose.DigitalSignatureAlg)
 }
+
 /// Generate a new random ES256 (P-256) key pair.
 pub fn generate_es256_keypair() -> KeyPair {
   let alg = gose.Ecdsa(gose.EcdsaP256)
@@ -106,8 +107,8 @@ pub fn cose_key(keypair: KeyPair) -> BitArray {
 /// Get the public key as a parsed `glasslock.PublicKey`.
 /// Use to construct a stored `Credential` in tests.
 pub fn public_key(keypair: KeyPair) -> glasslock.PublicKey {
-  let assert Ok(public_key) = glasslock.parse_public_key(cose_key(keypair))
-  public_key
+  let assert Ok(parsed) = glasslock.parse_public_key(cose_key(keypair))
+  parsed
 }
 
 /// Sign a message using the algorithm stamped on the keypair.

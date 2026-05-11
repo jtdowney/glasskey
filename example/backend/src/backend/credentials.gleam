@@ -66,8 +66,6 @@ fn from_stored_credential(
   })
 }
 
-// term_to_binary round-trips nested records (User -> Credential ->
-// AuthenticatorTransport) without per-field encoders.
 fn user_codec() -> codec.Codec(User) {
   codec.Codec(
     encode: fn(user) { term_encode(to_stored(user)) },
@@ -235,15 +233,19 @@ pub fn update(
   store: Store,
   user: User,
   credential: glasslock.Credential,
-) -> Nil {
+) -> Result(Nil, Nil) {
   let updated_user =
     User(..user, credentials: replace_credential(user.credentials, credential))
-  trove.put_in(
-    store.db,
-    keyspace: store.users,
-    key: user.username,
-    value: updated_user,
-  )
+  trove.transaction(store.db, timeout: trove_timeout, callback: fn(tx) {
+    let tx =
+      trove.tx_put_in(
+        tx,
+        keyspace: store.users,
+        key: user.username,
+        value: updated_user,
+      )
+    trove.Commit(tx: tx, result: Ok(Nil))
+  })
 }
 
 fn replace_credential(

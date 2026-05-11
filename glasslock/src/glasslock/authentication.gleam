@@ -233,8 +233,7 @@ pub fn allowed_top_origin(builder: Builder, origin: String) -> Builder {
 /// The returned string is *not* authenticated. If an attacker can tamper with
 /// the stored blob they can redirect verification by forging `rp_id` or
 /// `origins`. Store it somewhere the caller controls (server-side session, a
-/// signed cookie, or authenticated encryption). Wisp's `wisp.Signed` cookie
-/// security is a common fit.
+/// signed cookie, etc.).
 pub fn encode_challenge(challenge: Challenge) -> String {
   let allow_credentials =
     json.array(challenge.allowed_credentials, fn(entry) {

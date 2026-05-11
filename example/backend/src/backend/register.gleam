@@ -38,13 +38,10 @@ pub fn begin(req: wisp.Request, ctx: web.Context) -> wisp.Response {
     decode.success(username)
   }
 
-  case json.parse(body, decoder) {
+  case json.parse(body, decoder) |> result.map(string.trim) {
+    Ok("") -> web.error_response("username required", 400)
+    Ok(trimmed) -> begin_registration(req, trimmed, ctx)
     Error(_) -> web.error_response("invalid json", 400)
-    Ok(username) ->
-      case string.trim(username) {
-        "" -> web.error_response("username required", 400)
-        trimmed -> begin_registration(req, trimmed, ctx)
-      }
   }
 }
 
@@ -133,15 +130,15 @@ fn complete_registration(
   let result = {
     use raw <- result.try(
       wisp.get_cookie(req, session_cookie, wisp.Signed)
-      |> result.map_error(fn(_) { #("session not found", 400) }),
+      |> result.replace_error(#("session not found", 400)),
     )
     use session <- result.try(
       decode_pending(raw)
-      |> result.map_error(fn(_) { #("session not found", 400) }),
+      |> result.replace_error(#("session not found", 400)),
     )
     use credential <- result.try(
       registration.verify(response:, challenge: session.challenge)
-      |> result.map_error(fn(_) { #("verification failed", 400) }),
+      |> result.replace_error(#("verification failed", 400)),
     )
     credentials.save(
       ctx.credentials,

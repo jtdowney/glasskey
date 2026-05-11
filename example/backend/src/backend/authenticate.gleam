@@ -128,11 +128,11 @@ fn complete_authentication(
   let result = {
     use encoded <- result.try(
       wisp.get_cookie(req, session_cookie, wisp.Signed)
-      |> result.map_error(fn(_) { #("session not found", 400) }),
+      |> result.replace_error(#("session not found", 400)),
     )
     use challenge <- result.try(
       authentication.parse_challenge(encoded)
-      |> result.map_error(fn(_) { #("session not found", 400) }),
+      |> result.replace_error(#("session not found", 400)),
     )
     use info <- result.try(
       authentication.response_info(response)
@@ -142,11 +142,11 @@ fn complete_authentication(
     )
     use user <- result.try(
       lookup_user(ctx, info)
-      |> result.map_error(fn(_) { #("user not found", 400) }),
+      |> result.replace_error(#("user not found", 400)),
     )
     use stored_credential <- result.try(
       list.find(user.credentials, fn(cred) { cred.id == info.credential_id })
-      |> result.map_error(fn(_) { #("credential not found", 400) }),
+      |> result.replace_error(#("credential not found", 400)),
     )
     use updated_credential <- result.try(
       authentication.verify(response:, challenge:, stored: stored_credential)
@@ -154,7 +154,10 @@ fn complete_authentication(
         #("verification failed: " <> describe_error(err), 400)
       }),
     )
-    credentials.update(ctx.credentials, user, updated_credential)
+    use _ <- result.try(
+      credentials.update(ctx.credentials, user, updated_credential)
+      |> result.replace_error(#("failed to update credential", 500)),
+    )
     Ok(user.username)
   }
 

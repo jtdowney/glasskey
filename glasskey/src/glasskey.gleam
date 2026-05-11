@@ -51,7 +51,6 @@ pub type Algorithm {
   Rs256
 }
 
-/// Raw credential returned by the browser after `navigator.credentials.get()`.
 @internal
 pub type AuthenticationCredential {
   AuthenticationCredential(
@@ -223,7 +222,6 @@ pub type Error {
   UnknownError(String)
 }
 
-/// Raw credential returned by the browser after `navigator.credentials.create()`.
 @internal
 pub type RegistrationCredential {
   RegistrationCredential(

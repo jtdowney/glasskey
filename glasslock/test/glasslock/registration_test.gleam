@@ -12,24 +12,12 @@ import gleam/set
 import gleam/string
 import gleam/time/duration
 import qcheck
+import support/helpers
 
 fn algorithm_generator() -> qcheck.Generator(registration.Algorithm) {
   qcheck.from_generators(qcheck.return(registration.Es256), [
     qcheck.return(registration.Ed25519),
     qcheck.return(registration.Rs256),
-  ])
-}
-
-fn non_empty_list_from(
-  element: qcheck.Generator(a),
-) -> qcheck.Generator(List(a)) {
-  qcheck.map2(element, qcheck.list_from(element), fn(x, xs) { [x, ..xs] })
-}
-
-fn user_verification_generator() -> qcheck.Generator(glasslock.Verification) {
-  qcheck.from_generators(qcheck.return(glasslock.VerificationRequired), [
-    qcheck.return(glasslock.VerificationPreferred),
-    qcheck.return(glasslock.VerificationDiscouraged),
   ])
 }
 
@@ -621,11 +609,11 @@ pub fn verify_rejects_credential_algorithm_not_requested_test() {
 pub fn encode_decode_roundtrip_preserves_challenge_test() {
   use inputs <- qcheck.given(qcheck.tuple6(
     qcheck.non_empty_string(),
-    non_empty_list_from(qcheck.non_empty_string()),
-    non_empty_list_from(algorithm_generator()),
+    helpers.non_empty_list_from(qcheck.non_empty_string()),
+    helpers.non_empty_list_from(algorithm_generator()),
     qcheck.list_from(qcheck.non_empty_string()),
     qcheck.bool(),
-    user_verification_generator(),
+    helpers.user_verification_generator(),
   ))
   let #(
     rp_id,

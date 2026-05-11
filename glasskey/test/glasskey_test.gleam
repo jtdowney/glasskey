@@ -396,7 +396,9 @@ pub fn decode_registration_options_unknown_requirement_test() {
       ),
     )
 
-  let assert Error(_) = decode.run(dyn, glasskey.registration_options_decoder())
+  let assert Error([decode.DecodeError(path:, ..), ..]) =
+    decode.run(dyn, glasskey.registration_options_decoder())
+  assert list.contains(path, "residentKey")
 }
 
 pub fn decode_registration_options_all_unknown_algorithms_test() {
@@ -407,7 +409,9 @@ pub fn decode_registration_options_all_unknown_algorithms_test() {
       ]),
     )
 
-  let assert Error(_) = decode.run(dyn, glasskey.registration_options_decoder())
+  let assert Error([decode.DecodeError(expected:, ..), ..]) =
+    decode.run(dyn, glasskey.registration_options_decoder())
+  assert expected == "non-empty pubKeyCredParams"
 }
 
 pub fn decode_registration_options_mixed_algorithms_filters_unknown_test() {
