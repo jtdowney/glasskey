@@ -285,6 +285,19 @@ pub fn decode_optional_base64url(
   }
 }
 
+pub fn decode_credential_id(
+  raw_id raw_id: String,
+  credential_id credential_id: String,
+) -> Result(BitArray, Error) {
+  use raw_id_bytes <- result.try(decode_base64url(raw_id, "rawId"))
+  use credential_id_bytes <- result.try(decode_base64url(credential_id, "id"))
+  use <- bool.guard(
+    when: credential_id_bytes != raw_id_bytes,
+    return: Error(VerificationMismatch(glasslock.CredentialIdField)),
+  )
+  Ok(raw_id_bytes)
+}
+
 pub fn parse_client_data(data: BitArray) -> Result(ClientData, Error) {
   use json_string <- result.try(
     bit_array.to_string(data)
@@ -622,6 +635,19 @@ pub fn verify_user_policies(
   )
 
   Ok(Nil)
+}
+
+pub fn maybe_add_user_verification(
+  fields: List(#(String, json.Json)),
+  user_verification: Option(glasslock.Verification),
+) -> List(#(String, json.Json)) {
+  case user_verification {
+    option.None -> fields
+    option.Some(value) -> [
+      #("userVerification", json.string(user_verification_to_string(value))),
+      ..fields
+    ]
+  }
 }
 
 pub fn maybe_add_credential_descriptors(

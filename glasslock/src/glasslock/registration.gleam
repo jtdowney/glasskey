@@ -358,7 +358,7 @@ pub fn build(builder: Builder) -> #(Json, Challenge) {
   let authenticator_selection_fields =
     []
     |> maybe_add_attachment(builder.authenticator_attachment)
-    |> maybe_add_user_verification(builder.user_verification)
+    |> internal.maybe_add_user_verification(builder.user_verification)
     |> maybe_add_resident_key(builder.resident_key)
 
   let options_json =
@@ -470,22 +470,6 @@ fn maybe_add_resident_key(
   }
 }
 
-fn maybe_add_user_verification(
-  fields: List(#(String, Json)),
-  user_verification: Option(glasslock.Verification),
-) -> List(#(String, Json)) {
-  case user_verification {
-    option.None -> fields
-    option.Some(value) -> [
-      #(
-        "userVerification",
-        json.string(internal.user_verification_to_string(value)),
-      ),
-      ..fields
-    ]
-  }
-}
-
 fn maybe_add_authenticator_selection(
   fields: List(#(String, Json)),
   selection_fields: List(#(String, Json)),
@@ -591,14 +575,10 @@ fn decode_response_credential(
   response: ParsedResponse,
 ) -> Result(#(BitArray, BitArray, BitArray), Error) {
   use raw_id <- result.try(
-    wrap_error(internal.decode_base64url(response.raw_id, "rawId")),
-  )
-  use credential_id_bytes <- result.try(
-    wrap_error(internal.decode_base64url(response.credential_id, "id")),
-  )
-  use <- bool.guard(
-    when: credential_id_bytes != raw_id,
-    return: Error(VerificationMismatch(glasslock.CredentialIdField)),
+    wrap_error(internal.decode_credential_id(
+      raw_id: response.raw_id,
+      credential_id: response.credential_id,
+    )),
   )
 
   use client_data_json <- result.try(
