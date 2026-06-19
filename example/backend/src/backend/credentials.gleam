@@ -233,19 +233,15 @@ pub fn update(
   store: Store,
   user: User,
   credential: glasslock.Credential,
-) -> Result(Nil, Nil) {
+) -> Nil {
   let updated_user =
     User(..user, credentials: replace_credential(user.credentials, credential))
-  trove.transaction(store.db, timeout: trove_timeout, callback: fn(tx) {
-    let tx =
-      trove.tx_put_in(
-        tx,
-        keyspace: store.users,
-        key: user.username,
-        value: updated_user,
-      )
-    trove.Commit(tx: tx, result: Ok(Nil))
-  })
+  trove.put_in(
+    store.db,
+    keyspace: store.users,
+    key: user.username,
+    value: updated_user,
+  )
 }
 
 fn replace_credential(

@@ -13,7 +13,9 @@ pub fn login_begin(
   let body = json.object([#("username", json.string(username))])
 
   let expect =
-    rsvp.expect_ok_response(fn(result) { handler(decode_login_begin(result)) })
+    rsvp.expect_ok_response(fn(result) {
+      handler(decode_options(result, glasskey.authentication_options_decoder()))
+    })
 
   rsvp.post("/api/login/begin", body, expect)
 }
@@ -38,7 +40,7 @@ pub fn register_begin(
 
   let expect =
     rsvp.expect_ok_response(fn(result) {
-      handler(decode_register_begin(result))
+      handler(decode_options(result, glasskey.registration_options_decoder()))
     })
 
   rsvp.post("/api/register/begin", body, expect)
@@ -95,18 +97,6 @@ fn decode_response(
       json.parse(resp.body, decoder)
       |> result.replace_error("Invalid response from server")
   }
-}
-
-fn decode_register_begin(
-  result: Result(Response(String), rsvp.Error(String)),
-) -> Result(glasskey.RegistrationOptions, String) {
-  decode_options(result, glasskey.registration_options_decoder())
-}
-
-fn decode_login_begin(
-  result: Result(Response(String), rsvp.Error(String)),
-) -> Result(glasskey.AuthenticationOptions, String) {
-  decode_options(result, glasskey.authentication_options_decoder())
 }
 
 fn decode_options(

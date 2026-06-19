@@ -154,10 +154,7 @@ fn complete_authentication(
         #("verification failed: " <> describe_error(err), 400)
       }),
     )
-    use _ <- result.try(
-      credentials.update(ctx.credentials, user, updated_credential)
-      |> result.replace_error(#("failed to update credential", 500)),
-    )
+    credentials.update(ctx.credentials, user, updated_credential)
     Ok(user.username)
   }
 
