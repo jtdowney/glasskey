@@ -65,12 +65,6 @@ pub fn set_create_dom_exception(
 @external(javascript, "../glasskey_test_ffi.mjs", "setCreatePlainError")
 pub fn set_create_plain_error(message: String) -> Nil
 
-@external(javascript, "../glasskey_test_ffi.mjs", "setCreatePlainErrorWithCause")
-pub fn set_create_plain_error_with_cause(
-  message message: String,
-  cause cause: String,
-) -> Nil
-
 @external(javascript, "../glasskey_test_ffi.mjs", "deleteDomException")
 pub fn delete_dom_exception() -> Nil
 

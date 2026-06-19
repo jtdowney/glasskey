@@ -162,23 +162,48 @@ function toBitArray(buffer) {
 
 function translateJsError(error) {
   if (typeof DOMException !== "undefined" && error instanceof DOMException) {
-    return translateDomException(error.name, describeError(error));
+    return translateDomException(error.name, error.message);
   }
 
   if (error instanceof Error) {
-    return Error$UnknownError(describeError(error));
+    return Error$UnknownError(error.message);
   }
 
   return Error$UnknownError(String(error));
 }
 
-function describeError(error) {
-  if (error.cause === undefined || error.cause === null) {
-    return error.message;
+function bytesToBase64Url(bytes) {
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
   }
-  const cause =
-    error.cause instanceof Error ? error.cause.message : String(error.cause);
-  return error.message + " (cause: " + cause + ")";
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+function extensionResultsToJson(value) {
+  if (value instanceof ArrayBuffer) {
+    return bytesToBase64Url(new Uint8Array(value));
+  }
+  if (ArrayBuffer.isView(value)) {
+    return bytesToBase64Url(
+      new Uint8Array(value.buffer, value.byteOffset, value.byteLength),
+    );
+  }
+  if (Array.isArray(value)) {
+    return value.map(extensionResultsToJson);
+  }
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nested]) => [
+        key,
+        extensionResultsToJson(nested),
+      ]),
+    );
+  }
+  return value;
 }
 
 function buildRegistrationCredential(credential) {

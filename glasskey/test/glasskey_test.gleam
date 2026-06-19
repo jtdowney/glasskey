@@ -965,22 +965,6 @@ pub fn start_registration_plain_error_without_dom_exception_test() {
   promise.resolve(Nil)
 }
 
-pub fn start_registration_plain_error_includes_cause_test() {
-  use <- with_fake_navigator
-  helpers.set_create_plain_error_with_cause(
-    message: "outer failure",
-    cause: "inner detail",
-  )
-
-  use result <- promise.await(
-    glasskey.start_registration(default_registration_options()),
-  )
-
-  assert result
-    == Error(glasskey.UnknownError("outer failure (cause: inner detail)"))
-  promise.resolve(Nil)
-}
-
 pub fn start_registration_passes_options_to_navigator_test() {
   use <- with_fake_navigator
   helpers.set_create_credential(

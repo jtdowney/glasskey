@@ -226,13 +226,6 @@ export function deleteDomException() {
   delete globalThis.DOMException;
 }
 
-export function setCreatePlainErrorWithCause(message, cause) {
-  createBehavior = {
-    kind: "throw",
-    error: new Error(message, { cause: new Error(cause) }),
-  };
-}
-
 export function setGetCredential(
   rawId,
   clientDataJson,
