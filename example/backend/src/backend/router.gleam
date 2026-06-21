@@ -1,6 +1,3 @@
-//// Wisp request router: maps `/api/register/*` and `/api/login/*` POSTs to
-//// the matching handler module.
-
 import backend/authenticate
 import backend/register
 import backend/web

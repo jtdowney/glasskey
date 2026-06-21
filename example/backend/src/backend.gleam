@@ -1,6 +1,3 @@
-//// Mist server entry point: env-driven config, credential store setup, and
-//// HTTP listener on port 3000.
-
 import backend/credentials
 import backend/router
 import backend/web
@@ -23,8 +20,7 @@ const default_origins = "http://localhost:1234,http://localhost:5173"
 pub fn main() {
   wisp.configure_logger()
 
-  let priv_dir = wisp.priv_directory("backend") |> result.unwrap("priv")
-  let assert Ok(credential_store) = credentials.open(priv_dir <> "/storage")
+  let credential_store = credentials.open("data")
 
   let assert Ok(origins) =
     envoy.get("ORIGINS")

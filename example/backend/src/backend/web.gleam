@@ -1,7 +1,3 @@
-//// Shared `Context` (credential store, RP id/name, allowed origins), the
-//// request-logging plus crash-rescue middleware, and small response helpers
-//// used by every handler.
-
 import backend/credentials
 import gleam/json
 import non_empty_list.{type NonEmptyList}
@@ -20,8 +16,6 @@ pub fn middleware(
   req: wisp.Request,
   handler: fn(wisp.Request) -> wisp.Response,
 ) -> wisp.Response {
-  // No CSRF check: WebAuthn endpoints take JSON over fetch and rely on
-  // SameSite=Lax session cookies to block cross-site form posts.
   use <- wisp.log_request(req)
   use <- wisp.rescue_crashes
 

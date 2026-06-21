@@ -1,87 +1,115 @@
-//// Credential store backed by trove.
+//// Credential store backed by storail
 
 import glasslock
 import gleam/bit_array
 import gleam/bool
+import gleam/dynamic/decode
+import gleam/json
 import gleam/list
+import gleam/option
 import gleam/result
-import gleam/string
-import trove
-import trove/codec
+import storail
 
-type StoredUser {
-  StoredUser(
-    username: String,
-    user_id: BitArray,
-    credentials: List(StoredCredential),
+fn user_to_json(user: User) -> json.Json {
+  json.object([
+    #("username", json.string(user.username)),
+    #("user_id", json.string(bit_array.base64_encode(user.user_id, True))),
+    #("credentials", json.array(user.credentials, credential_to_json)),
+  ])
+}
+
+fn credential_to_json(credential: glasslock.Credential) -> json.Json {
+  json.object([
+    #("id", json.string(bit_array.base64_encode(credential.id, True))),
+    #(
+      "public_key_bytes",
+      json.string(bit_array.base64_encode(
+        glasslock.encode_public_key(credential.public_key),
+        True,
+      )),
+    ),
+    #("sign_count", json.int(credential.sign_count)),
+    #(
+      "transports",
+      json.array(credential.transports, fn(t) {
+        json.string(transport_to_string(t))
+      }),
+    ),
+  ])
+}
+
+fn user_decoder() -> decode.Decoder(User) {
+  use username <- decode.field("username", decode.string)
+  use user_id <- decode.field("user_id", base64_decoder())
+  use credentials <- decode.field(
+    "credentials",
+    decode.list(credential_decoder()),
+  )
+  case result.all(credentials) {
+    Ok(credentials) -> decode.success(User(username:, user_id:, credentials:))
+    Error(Nil) ->
+      decode.failure(User(username: "", user_id: <<>>, credentials: []), "User")
+  }
+}
+
+fn credential_decoder() -> decode.Decoder(Result(glasslock.Credential, Nil)) {
+  use id <- decode.field("id", base64_decoder())
+  use public_key_bytes <- decode.field("public_key_bytes", base64_decoder())
+  use sign_count <- decode.field("sign_count", decode.int)
+  use transports <- decode.field("transports", decode.list(transport_decoder()))
+  decode.success(
+    glasslock.parse_public_key(public_key_bytes)
+    |> result.replace_error(Nil)
+    |> result.map(fn(public_key) {
+      glasslock.Credential(id:, public_key:, sign_count:, transports:)
+    }),
   )
 }
 
-type StoredCredential {
-  StoredCredential(
-    id: BitArray,
-    public_key_bytes: BitArray,
-    sign_count: Int,
-    transports: List(glasslock.Transport),
-  )
+fn base64_decoder() -> decode.Decoder(BitArray) {
+  use text <- decode.then(decode.string)
+  case bit_array.base64_decode(text) {
+    Ok(bytes) -> decode.success(bytes)
+    Error(Nil) -> decode.failure(<<>>, "Base64")
+  }
 }
 
-fn to_stored(user: User) -> StoredUser {
-  StoredUser(
-    username: user.username,
-    user_id: user.user_id,
-    credentials: list.map(user.credentials, to_stored_credential),
-  )
+fn transport_decoder() -> decode.Decoder(glasslock.Transport) {
+  use text <- decode.then(decode.string)
+  case transport_from_string(text) {
+    Ok(transport) -> decode.success(transport)
+    Error(Nil) -> decode.failure(glasslock.TransportInternal, "Transport")
+  }
 }
 
-fn to_stored_credential(credential: glasslock.Credential) -> StoredCredential {
-  StoredCredential(
-    id: credential.id,
-    public_key_bytes: glasslock.encode_public_key(credential.public_key),
-    sign_count: credential.sign_count,
-    transports: credential.transports,
-  )
+fn transport_to_string(transport: glasslock.Transport) -> String {
+  case transport {
+    glasslock.TransportUsb -> "usb"
+    glasslock.TransportNfc -> "nfc"
+    glasslock.TransportBle -> "ble"
+    glasslock.TransportSmartCard -> "smart-card"
+    glasslock.TransportHybrid -> "hybrid"
+    glasslock.TransportInternal -> "internal"
+  }
 }
 
-fn from_stored(stored: StoredUser) -> Result(User, Nil) {
-  use credentials <- result.try(list.try_map(
-    stored.credentials,
-    from_stored_credential,
-  ))
-  Ok(User(username: stored.username, user_id: stored.user_id, credentials:))
+fn transport_from_string(value: String) -> Result(glasslock.Transport, Nil) {
+  case value {
+    "usb" -> Ok(glasslock.TransportUsb)
+    "nfc" -> Ok(glasslock.TransportNfc)
+    "ble" -> Ok(glasslock.TransportBle)
+    "smart-card" -> Ok(glasslock.TransportSmartCard)
+    "hybrid" -> Ok(glasslock.TransportHybrid)
+    "internal" -> Ok(glasslock.TransportInternal)
+    _ -> Error(Nil)
+  }
 }
 
-fn from_stored_credential(
-  stored: StoredCredential,
-) -> Result(glasslock.Credential, Nil) {
-  glasslock.parse_public_key(stored.public_key_bytes)
-  |> result.replace_error(Nil)
-  |> result.map(fn(public_key) {
-    glasslock.Credential(
-      id: stored.id,
-      public_key:,
-      sign_count: stored.sign_count,
-      transports: stored.transports,
-    )
-  })
-}
-
-fn user_codec() -> codec.Codec(User) {
-  codec.Codec(
-    encode: fn(user) { term_encode(to_stored(user)) },
-    decode: fn(bits) {
-      use stored <- result.try(term_decode(bits))
-      from_stored(stored)
-    },
-  )
-}
-
-pub type Store {
+pub opaque type Store {
   Store(
-    db: trove.Db(String, String),
-    users: trove.Keyspace(String, User),
-    credential_index: trove.Keyspace(String, String),
-    user_id_index: trove.Keyspace(String, String),
+    users: storail.Collection(User),
+    credential_index: storail.Collection(String),
+    user_id_index: storail.Collection(String),
   )
 }
 
@@ -93,49 +121,30 @@ pub type User {
   )
 }
 
-const trove_timeout = 5000
-
-pub fn open(storage_path: String) -> Result(Store, trove.OpenError) {
-  let config =
-    trove.Config(
-      path: storage_path,
-      key_codec: codec.string(),
-      value_codec: codec.string(),
-      key_compare: string.compare,
-      auto_compact: trove.AutoCompact(min_dirt: 1000, min_dirt_factor: 0.25),
-      auto_file_sync: trove.AutoSync,
-      call_timeout: trove_timeout,
-    )
-  use db <- result.try(trove.open(config))
+pub fn open(storage_path: String) -> Store {
+  let config = storail.Config(storage_path:)
   let users =
-    trove.keyspace(
-      db,
+    storail.Collection(
       name: "users",
-      key_codec: codec.string(),
-      value_codec: user_codec(),
-      key_compare: string.compare,
+      to_json: user_to_json,
+      decoder: user_decoder(),
+      config:,
     )
   let credential_index =
-    trove.keyspace(
-      db,
+    storail.Collection(
       name: "credential_index",
-      key_codec: codec.string(),
-      value_codec: codec.string(),
-      key_compare: string.compare,
+      to_json: json.string,
+      decoder: decode.string,
+      config:,
     )
   let user_id_index =
-    trove.keyspace(
-      db,
+    storail.Collection(
       name: "user_id_index",
-      key_codec: codec.string(),
-      value_codec: codec.string(),
-      key_compare: string.compare,
+      to_json: json.string,
+      decoder: decode.string,
+      config:,
     )
-  Ok(Store(db:, users:, credential_index:, user_id_index:))
-}
-
-pub fn close(store: Store) -> Nil {
-  trove.close(store.db)
+  Store(users:, credential_index:, user_id_index:)
 }
 
 fn user_key(username: String) -> String {
@@ -145,7 +154,7 @@ fn user_key(username: String) -> String {
 }
 
 pub fn get_user(store: Store, username: String) -> Result(User, Nil) {
-  trove.get_in(store.db, keyspace: store.users, key: username)
+  storail.read(storail.key(store.users, user_key(username)))
   |> result.replace_error(Nil)
 }
 
@@ -153,11 +162,10 @@ pub fn get_user_by_credential_id(
   store: Store,
   credential_id: BitArray,
 ) -> Result(User, Nil) {
-  trove.get_in(
-    store.db,
-    keyspace: store.credential_index,
-    key: bit_array.base64_url_encode(credential_id, False),
-  )
+  storail.read(storail.key(
+    store.credential_index,
+    bit_array.base64_url_encode(credential_id, False),
+  ))
   |> result.replace_error(Nil)
   |> result.try(get_user(store, _))
 }
@@ -166,11 +174,10 @@ pub fn get_user_by_user_id(
   store: Store,
   user_id: BitArray,
 ) -> Result(User, Nil) {
-  trove.get_in(
-    store.db,
-    keyspace: store.user_id_index,
-    key: bit_array.base64_url_encode(user_id, False),
-  )
+  storail.read(storail.key(
+    store.user_id_index,
+    bit_array.base64_url_encode(user_id, False),
+  ))
   |> result.replace_error(Nil)
   |> result.try(get_user(store, _))
 }
@@ -190,43 +197,25 @@ pub fn save(
   let cred_key = bit_array.base64_url_encode(credential.id, False)
   let uid_key = bit_array.base64_url_encode(user_id, False)
 
-  trove.transaction(store.db, timeout: trove_timeout, callback: fn(tx) {
-    use <- bool.guard(
-      when: trove.tx_has_key_in(tx, keyspace: store.users, key: username),
-      return: trove.Cancel(result: Error(UsernameTaken)),
-    )
-    use <- bool.guard(
-      when: trove.tx_has_key_in(
-        tx,
-        keyspace: store.credential_index,
-        key: cred_key,
-      ),
-      return: trove.Cancel(result: Error(CredentialIdTaken)),
-    )
-    use <- bool.guard(
-      when: trove.tx_has_key_in(tx, keyspace: store.user_id_index, key: uid_key),
-      return: trove.Cancel(result: Error(UserIdTaken)),
-    )
+  use <- bool.guard(
+    exists(storail.key(store.users, user_key(username))),
+    Error(UsernameTaken),
+  )
+  use <- bool.guard(
+    exists(storail.key(store.credential_index, cred_key)),
+    Error(CredentialIdTaken),
+  )
+  use <- bool.guard(
+    exists(storail.key(store.user_id_index, uid_key)),
+    Error(UserIdTaken),
+  )
 
-    let tx =
-      tx
-      |> trove.tx_put_in(
-        keyspace: store.users,
-        key: username,
-        value: User(username:, user_id:, credentials: [credential]),
-      )
-      |> trove.tx_put_in(
-        keyspace: store.credential_index,
-        key: cred_key,
-        value: username,
-      )
-      |> trove.tx_put_in(
-        keyspace: store.user_id_index,
-        key: uid_key,
-        value: username,
-      )
-    trove.Commit(tx: tx, result: Ok(Nil))
-  })
+  let user = User(username:, user_id:, credentials: [credential])
+  // this is a demo, don't ignore write errors for real use
+  let _ = storail.write(storail.key(store.users, user_key(username)), user)
+  let _ = storail.write(storail.key(store.credential_index, cred_key), username)
+  let _ = storail.write(storail.key(store.user_id_index, uid_key), username)
+  Ok(Nil)
 }
 
 pub fn update(
@@ -236,12 +225,16 @@ pub fn update(
 ) -> Nil {
   let updated_user =
     User(..user, credentials: replace_credential(user.credentials, credential))
-  trove.put_in(
-    store.db,
-    keyspace: store.users,
-    key: user.username,
-    value: updated_user,
-  )
+  // this is a demo, don't ignore write errors for real use
+  let _ = storail.write(storail.key(store.users, user.username), updated_user)
+  Nil
+}
+
+fn exists(key: storail.Key(t)) -> Bool {
+  case storail.optional_read(key) {
+    Ok(option.Some(_)) -> True
+    _ -> False
+  }
 }
 
 fn replace_credential(
@@ -255,9 +248,3 @@ fn replace_credential(
     }
   })
 }
-
-@external(erlang, "backend_ffi", "term_encode")
-fn term_encode(term: a) -> BitArray
-
-@external(erlang, "backend_ffi", "term_decode")
-fn term_decode(bits: BitArray) -> Result(a, Nil)

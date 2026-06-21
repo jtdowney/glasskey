@@ -14,7 +14,7 @@ gleam_stdlib = ">= 1.0.0 and < 2.0.0"
 gleam_time = ">= 1.6.0 and < 2.0.0"
 mist = ">= 6.0.0 and < 7.0.0"
 non_empty_list = ">= 2.3.0 and < 3.0.0"
-trove = ">= 1.1.0 and < 2.0.0"
+storail = ">= 3.2.0 and < 4.0.0"
 wisp = ">= 2.1.0 and < 3.0.0"
 
 [dev-dependencies]

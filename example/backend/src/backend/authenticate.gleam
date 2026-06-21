@@ -1,7 +1,3 @@
-//// `/api/login/begin` and `/api/login/complete` handlers. Mirrors `register`
-//// for the authentication ceremony, persisting the challenge in a signed-
-//// cookie session.
-
 import backend/credentials
 import backend/web
 import glasslock
