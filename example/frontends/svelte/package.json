@@ -18,15 +18,15 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@sveltejs/adapter-static": "^3.0.10",
-    "@sveltejs/kit": "^2.59.0",
-    "@sveltejs/vite-plugin-svelte": "^7.0.0",
-    "eslint": "^10.3.0",
+    "@sveltejs/kit": "^2.65.1",
+    "@sveltejs/vite-plugin-svelte": "^7.1.2",
+    "eslint": "^10.5.0",
     "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-svelte": "^3.17.1",
+    "eslint-plugin-svelte": "^3.19.0",
     "globals": "^17.6.0",
-    "prettier": "^3.8.3",
-    "prettier-plugin-svelte": "^3.5.1",
-    "svelte": "^5.55.5",
-    "vite": "^8.0.10"
+    "prettier": "^3.8.4",
+    "prettier-plugin-svelte": "^3.5.2",
+    "svelte": "^5.56.3",
+    "vite": "^8.0.16"
   }
 }
