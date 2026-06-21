@@ -19,6 +19,14 @@ fmt:
     cd example/frontends/lustre && gleam format src
     cd example/frontends/svelte && bun run format
 
+# Remove all build artifacts
+clean:
+    cd glasslock && gleam clean
+    cd glasskey && gleam clean
+    cd example/backend && gleam clean
+    cd example/frontends/lustre && gleam clean
+    cd example/frontends/svelte && rm -rf .svelte-kit build .vite
+
 # Generate docs for each project
 docs:
     cd glasslock && gleam docs build --open
