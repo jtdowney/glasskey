@@ -1,7 +1,6 @@
 import birdie
 import glasslock
 import glasslock/authentication
-import glasslock/internal/cbor
 import glasslock/registration
 import glasslock/testing
 import gleam/bit_array
@@ -514,20 +513,6 @@ pub fn verify_rejects_top_level_id_mismatched_with_raw_id_test() {
     )
   assert result
     == Error(authentication.VerificationMismatch(glasslock.CredentialIdField))
-}
-
-pub fn parse_public_key_rejects_unsupported_algorithm_test() {
-  let unsupported_key_cbor =
-    cbor.encode(
-      cbor.Map([
-        #(cbor.Int(1), cbor.Int(4)),
-        #(cbor.Int(-1), cbor.Bytes(<<0:256>>)),
-      ]),
-    )
-  assert glasslock.parse_public_key(unsupported_key_cbor)
-    == Error(glasslock.UnsupportedPublicKey(
-      "COSE key missing algorithm (label 3)",
-    ))
 }
 
 pub fn verify_rejects_invalid_signature_test() {

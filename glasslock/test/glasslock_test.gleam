@@ -3,6 +3,8 @@ import glasslock/internal/cbor
 import glasslock/testing
 import gleam/list
 import gose
+import gose/cose
+import kryptos/ec
 import unitest
 
 pub fn main() -> Nil {
@@ -89,6 +91,18 @@ pub fn parse_public_key_rejects_missing_alg_test() {
   assert glasslock.parse_public_key(cbor_bytes)
     == Error(glasslock.UnsupportedPublicKey(
       "COSE key missing algorithm (label 3)",
+    ))
+}
+
+pub fn parse_public_key_rejects_non_signature_algorithm_test() {
+  let key =
+    gose.generate_ec(ec.P256)
+    |> gose.with_alg(gose.KeyEncryptionAlg(gose.EcdhEs(gose.EcdhEsDirect)))
+  let assert Ok(public) = gose.public_key(key)
+  let assert Ok(cose_bytes) = cose.key_to_cbor(public)
+  assert glasslock.parse_public_key(cose_bytes)
+    == Error(glasslock.UnsupportedPublicKey(
+      "key algorithm is not a signature algorithm",
     ))
 }
 

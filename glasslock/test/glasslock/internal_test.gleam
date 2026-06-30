@@ -186,7 +186,7 @@ pub fn verify_client_data_rejects_empty_origins_test() {
       allowed_top_origins: [],
     )
     == Error(internal.ParseError(
-      "no allowed origins configured; pass a non-empty origins list to request",
+      "no allowed origins configured; pass a non-empty origins list to build",
     ))
 }
 
@@ -247,6 +247,25 @@ pub fn parse_registration_auth_data_rejects_truncated_credential_test() {
     == Error(internal.ParseError("Missing attested credential data"))
 }
 
+pub fn parse_registration_auth_data_rejects_credential_id_past_buffer_test() {
+  let assert Ok(rp_id_hash) =
+    crypto.hash(hash.Sha256, bit_array.from_string("example.com"))
+  let flags_byte = 0x41
+  let aaguid = <<0:128>>
+  // cred_id_len claims 255 bytes but only 4 follow
+  let auth_data =
+    bit_array.concat([
+      rp_id_hash,
+      <<flags_byte>>,
+      <<0x00, 0x00, 0x00, 0x00>>,
+      aaguid,
+      <<255:size(16)>>,
+      <<0xDE, 0xAD, 0xBE, 0xEF>>,
+    ])
+  assert internal.parse_registration_auth_data(auth_data)
+    == Error(internal.ParseError("Invalid attested credential data"))
+}
+
 pub fn split_cose_key_rejects_trailing_garbage_test() {
   let keypair = testing.generate_es256_keypair()
   let cose_key = testing.cose_key(keypair)
@@ -296,6 +315,38 @@ pub fn extract_attestation_fields_rejects_missing_fmt_test() {
     ])
   assert internal.extract_attestation_fields(cbor)
     == Error(internal.ParseError("Missing field: fmt"))
+}
+
+pub fn extract_attestation_fields_rejects_missing_attestation_statement_test() {
+  let cbor =
+    cbor.Map([
+      #(cbor.String("authData"), cbor.Bytes(<<0x00>>)),
+      #(cbor.String("fmt"), cbor.String("none")),
+    ])
+  assert internal.extract_attestation_fields(cbor)
+    == Error(internal.ParseError("Missing field: attStmt"))
+}
+
+pub fn extract_attestation_fields_rejects_auth_data_not_bytes_test() {
+  let cbor =
+    cbor.Map([
+      #(cbor.String("authData"), cbor.Int(42)),
+      #(cbor.String("attStmt"), cbor.Map([])),
+      #(cbor.String("fmt"), cbor.String("none")),
+    ])
+  assert internal.extract_attestation_fields(cbor)
+    == Error(internal.ParseError("Field not bytes: authData"))
+}
+
+pub fn extract_attestation_fields_rejects_fmt_not_string_test() {
+  let cbor =
+    cbor.Map([
+      #(cbor.String("authData"), cbor.Bytes(<<0x00>>)),
+      #(cbor.String("attStmt"), cbor.Map([])),
+      #(cbor.String("fmt"), cbor.Int(42)),
+    ])
+  assert internal.extract_attestation_fields(cbor)
+    == Error(internal.ParseError("Field not string: fmt"))
 }
 
 pub fn parse_attestation_object_rejects_invalid_cbor_test() {

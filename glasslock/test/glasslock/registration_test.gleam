@@ -166,8 +166,6 @@ pub fn verify_valid_registration_test() {
   let assert Ok(cred) = registration.verify_json(response_json:, challenge:)
   assert cred.id == response.credential_id
   assert cred.sign_count == 0
-  let raw_public_key = glasslock.encode_public_key(cred.public_key)
-  assert bit_array.byte_size(raw_public_key) > 0
 }
 
 pub fn verify_via_decoded_pipeline_test() {
@@ -554,6 +552,39 @@ pub fn verify_rejects_top_level_id_mismatched_with_raw_id_test() {
     == Error(registration.VerificationMismatch(glasslock.CredentialIdField))
 }
 
+pub fn verify_rejects_raw_id_not_matching_attested_credential_test() {
+  let challenge = setup_challenge()
+  let response = testing.build_registration_response(challenge:)
+  let keypair = testing.generate_es256_keypair()
+  let attested_credential_id = <<1, 2, 3, 4, 5, 6, 7, 8, 9, 10>>
+  let response_credential_id = <<11, 12, 13, 14, 15, 16, 17, 18, 19, 20>>
+  let authenticator_data =
+    testing.build_registration_authenticator_data(
+      relying_party_id: registration.challenge_data(challenge).rp_id,
+      credential_id: attested_credential_id,
+      cose_key_cbor: testing.cose_key(keypair),
+      flags: testing.default_flags,
+      sign_count: 0,
+    )
+  let response_json =
+    testing.to_registration_json(
+      testing.RegistrationResponse(
+        ..response,
+        id: bit_array.base64_url_encode(response_credential_id, False),
+        credential_id: response_credential_id,
+        attestation_object: testing.build_attestation_object(
+          format: "none",
+          authenticator_data:,
+          attestation_statement: [],
+        ),
+      ),
+    )
+
+  let result = registration.verify_json(response_json:, challenge:)
+  assert result
+    == Error(registration.VerificationMismatch(glasslock.CredentialIdField))
+}
+
 pub fn verify_rejects_non_empty_attestation_statement_test() {
   let challenge = setup_challenge()
   let keypair = testing.generate_es256_keypair()
@@ -765,6 +796,64 @@ pub fn decode_rejects_empty_algorithms_test() {
 
   let result = registration.parse_challenge(blob)
   assert result == Error(registration.ParseError("Challenge has no algorithms"))
+}
+
+pub fn decode_rejects_unsupported_algorithm_test() {
+  let blob =
+    json.object([
+      #("v", json.int(1)),
+      #("kind", json.string("registration")),
+      #("bytes", json.string(bit_array.base64_url_encode(<<0:256>>, False))),
+      #("rp_id", json.string("example.com")),
+      #("origins", json.array(["https://example.com"], json.string)),
+      #("user_verification", json.string("preferred")),
+      #("allow_cross_origin", json.bool(False)),
+      #("allowed_top_origins", json.array([], json.string)),
+      #("algorithms", json.array([-999], json.int)),
+    ])
+    |> json.to_string
+
+  let result = registration.parse_challenge(blob)
+  assert result == Error(registration.ParseError("Unsupported algorithm: -999"))
+}
+
+pub fn decode_rejects_invalid_user_verification_test() {
+  let blob =
+    json.object([
+      #("v", json.int(1)),
+      #("kind", json.string("registration")),
+      #("bytes", json.string(bit_array.base64_url_encode(<<0:256>>, False))),
+      #("rp_id", json.string("example.com")),
+      #("origins", json.array(["https://example.com"], json.string)),
+      #("user_verification", json.string("sometimes")),
+      #("allow_cross_origin", json.bool(False)),
+      #("allowed_top_origins", json.array([], json.string)),
+      #("algorithms", json.array([-7], json.int)),
+    ])
+    |> json.to_string
+
+  let result = registration.parse_challenge(blob)
+  assert result
+    == Error(registration.ParseError("Invalid user_verification: sometimes"))
+}
+
+pub fn decode_rejects_invalid_bytes_base64_test() {
+  let blob =
+    json.object([
+      #("v", json.int(1)),
+      #("kind", json.string("registration")),
+      #("bytes", json.string("not base64!")),
+      #("rp_id", json.string("example.com")),
+      #("origins", json.array(["https://example.com"], json.string)),
+      #("user_verification", json.string("preferred")),
+      #("allow_cross_origin", json.bool(False)),
+      #("allowed_top_origins", json.array([], json.string)),
+      #("algorithms", json.array([-7], json.int)),
+    ])
+    |> json.to_string
+
+  let result = registration.parse_challenge(blob)
+  assert result == Error(registration.ParseError("Invalid base64url in bytes"))
 }
 
 pub fn request_emits_compat_json_test() {

@@ -225,8 +225,8 @@ pub fn allowed_top_origin(builder: Builder, origin: String) -> Builder {
 }
 
 /// Serialize an authentication challenge for out-of-process storage between
-/// the `request` and `verify` steps (signed cookie, Redis, database row).
-/// Pair with `parse_challenge` to rehydrate.
+/// the [`build`](#build) and [`verify`](#verify) steps (signed cookie, database,
+/// etc.). Pair with [`parse_challenge`](#parse_challenge) to rehydrate.
 ///
 /// # Security
 ///

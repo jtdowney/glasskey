@@ -561,7 +561,7 @@ pub fn verify_client_data(
   use <- bool.guard(
     when: set.is_empty(expected_origins),
     return: Error(ParseError(
-      "no allowed origins configured; pass a non-empty origins list to request",
+      "no allowed origins configured; pass a non-empty origins list to build",
     )),
   )
   use <- bool.guard(
