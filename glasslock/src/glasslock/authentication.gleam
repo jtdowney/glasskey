@@ -543,7 +543,7 @@ fn check_credential_allowed(
 // Sign count 0 means the authenticator does not track signature counts. Accept
 // any new value when stored is 0. Reject when new drops to 0 but stored was
 // non-zero (possible cloned key).
-fn check_sign_count(stored: Int, new: Int) -> Result(Nil, Error) {
+fn check_sign_count(stored stored: Int, new new: Int) -> Result(Nil, Error) {
   let ok = case stored, new {
     0, _ -> True
     _, 0 -> False

@@ -83,7 +83,7 @@ case glasskey.supports_webauthn() {
 }
 
 // Check for platform authenticator (Touch ID, Windows Hello, etc.)
-use available <- promise.await(glasskey.platform_authenticator_available())
+use available <- promise.await(glasskey.supports_platform_authenticator())
 
 // Check for autofill/conditional mediation support
 use available <- promise.await(glasskey.supports_webauthn_autofill())

@@ -9,7 +9,7 @@ Two independent libraries, linked by shared JSON convention:
 | [glasslock](glasslock/) | Erlang / NodeJS    | Server-side WebAuthn verification |
 | [glasskey](glasskey/)   | Browser JavaScript | Browser WebAuthn bindings         |
 
-The libraries are independent at compile time, glasskey produces JSON that glasslock consumes by convention, with no shared dependency.
+The libraries are independent at compile time, glasskey produces JSON that glasslock consumes by convention.
 
 ## Installation
 
@@ -32,26 +32,6 @@ The `example/` directory contains a shared Wisp/Mist backend (using glasslock) a
 ```sh
 just example-lustre  # Run the Lustre-based demo
 just example-svelte  # Run the Svelte/SimpleWebAuthn demo
-```
-
-## Supported Features
-
-- ES256 (P-256 + SHA-256), Ed25519, and RS256 (RSA PKCS#1 v1.5 + SHA-256) signatures
-- "none" attestation format
-- Discoverable credentials (passkeys) and non-discoverable credentials
-- User verification policies
-- Sign count verification for cloned authenticator detection
-- Cross-origin and top-origin verification for iframe embeds
-
-## Development
-
-Requires [Gleam](https://gleam.run) and [just](https://github.com/casey/just).
-
-```sh
-just build   # Build all projects
-just test    # Test all projects
-just fmt     # Format all projects
-just deps    # Download all dependencies
 ```
 
 ## Resources

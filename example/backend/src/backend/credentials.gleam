@@ -225,8 +225,11 @@ pub fn update(
 ) -> Nil {
   let updated_user =
     User(..user, credentials: replace_credential(user.credentials, credential))
-  // this is a demo, don't ignore write errors for real use
-  let _ = storail.write(storail.key(store.users, user.username), updated_user)
+  let _ =
+    storail.write(
+      storail.key(store.users, user_key(user.username)),
+      updated_user,
+    )
   Nil
 }
 

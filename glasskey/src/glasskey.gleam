@@ -4,32 +4,6 @@
 //// Designed for use with [glasslock](https://hexdocs.pm/glasslock) on the
 //// server side, or any server that consumes JSON compatible with
 //// [@simplewebauthn/browser](https://simplewebauthn.dev/docs/packages/browser).
-////
-//// ## Quick Start
-////
-//// `registration_options_decoder()` and `authentication_options_decoder()` are
-//// `decode.Decoder` values that parse the options JSON glasslock produces.
-//// Compose them into your server's response shape, then pass the decoded
-//// value to the matching ceremony starter.
-////
-//// ```gleam
-//// import glasskey
-//// import gleam/javascript/promise
-////
-//// // Registration
-//// use result <- promise.await(glasskey.start_registration(options))
-//// case result {
-////   Ok(response_json) -> send_to_server(response_json)
-////   Error(e) -> handle_error(e)
-//// }
-////
-//// // Authentication
-//// use result <- promise.await(glasskey.start_authentication(options))
-//// case result {
-////   Ok(response_json) -> send_to_server(response_json)
-////   Error(e) -> handle_error(e)
-//// }
-//// ```
 
 import gleam/bit_array
 import gleam/bool
@@ -469,13 +443,14 @@ fn to_get_options(options: AuthenticationOptions) -> GetOptions {
   )
 }
 
-/// Check whether the browser supports a platform authenticator (Touch ID, Windows Hello, etc.).
+/// Check whether the browser supports a user-verifying platform authenticator (Touch ID, Windows Hello, etc.).
 @external(javascript, "./glasskey_ffi.mjs", "platformAuthenticatorIsAvailable")
 pub fn supports_platform_authenticator() -> Promise(Bool)
 
 /// Check whether the browser supports WebAuthn.
 ///
-/// Returns `True` if `window.PublicKeyCredential` exists.
+/// Returns `True` if both `window.PublicKeyCredential` and
+/// `navigator.credentials` are available.
 @external(javascript, "./glasskey_ffi.mjs", "browserSupportsWebauthn")
 pub fn supports_webauthn() -> Bool
 
