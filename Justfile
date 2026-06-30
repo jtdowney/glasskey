@@ -8,7 +8,8 @@ build:
 
 # Test all projects
 test:
-    cd glasslock && gleam test
+    cd glasslock && gleam test --target erlang
+    cd glasslock && gleam test --target javascript
     cd glasskey && gleam test
 
 # Format all projects
