@@ -1,178 +1,213 @@
 import frontend/api
-import frontend/model
 import frontend/router
-import frontend/view
 import glasskey
 import gleam/javascript/promise
+import gleam/json.{type Json}
 import gleam/option
 import gleam/uri.{type Uri}
 import lustre
+import lustre/attribute
 import lustre/effect.{type Effect}
+import lustre/element.{type Element}
+import lustre/element/html
+import lustre/event
 import modem
 
-@external(javascript, "./frontend_ffi.mjs", "setPendingAbort")
-fn set_pending_abort(abort: fn() -> Nil) -> Nil
-
-@external(javascript, "./frontend_ffi.mjs", "runPendingAbort")
-fn run_pending_abort() -> Nil
-
 pub fn main() {
-  let app = lustre.application(init, update, view.root)
+  let app = lustre.application(init, update, root)
   let assert Ok(_) = lustre.start(app, "#app", Nil)
   Nil
 }
 
-fn init(_flags) -> #(model.Model, Effect(model.Msg)) {
+pub type Model {
+  Unauthenticated(page: UnauthenticatedPage)
+  Registering(username: String, phase: RegisterPhase)
+  Authenticated(username: String)
+}
+
+pub type UnauthenticatedPage {
+  HomePage
+  LoginPage(state: LoginState, username: String)
+  NotFoundPage(uri: Uri)
+}
+
+pub type RegisterPhase {
+  RegisterIdle(status: RegisterStatus)
+  RegisterBeginning
+  RegisterAwaitingAuthenticator
+  RegisterVerifying
+}
+
+pub type RegisterStatus {
+  RegisterStart
+  RegisterSucceeded
+  RegisterFailed(message: String)
+}
+
+pub type LoginState {
+  LoginCheckingAutofill
+  LoginSettingUpConditional
+  LoginConditional
+  LoginModalBeginning
+  LoginModalAwaiting
+  LoginVerifying
+  LoginReady
+  LoginFailed(message: String)
+}
+
+pub type Msg {
+  RouterChangedRoute(router.Route)
+
+  UserTypedRegisterUsername(String)
+  UserClickedRegister
+  BackendBeganRegistration(Result(glasskey.RegistrationOptions, String))
+  AuthenticatorFinishedRegistration(Result(Json, glasskey.Error))
+  BackendFinishedRegistration(Result(Nil, String))
+
+  UserTypedLoginUsername(String)
+  UserClickedLogin
+  BrowserReportedAutofillSupport(Bool)
+  BackendBeganLogin(Result(glasskey.AuthenticationOptions, String))
+  BackendBeganModalLogin(Result(glasskey.AuthenticationOptions, String))
+  BrowserStartedConditionalAuth(Result(Nil, glasskey.Error))
+  AuthenticatorFinishedLogin(Result(Json, glasskey.Error))
+  AuthenticatorFinishedConditionalLogin(Result(Json, glasskey.Error))
+  BackendFinishedLogin(Result(String, String))
+}
+
+fn init(_flags) -> #(Model, Effect(Msg)) {
   let starting_route = case modem.initial_uri() {
     Ok(uri) -> router.parse(uri)
     Error(_) -> router.Home
   }
   let #(m, route_effect) =
-    apply_route(model.Unauthenticated(page: model.HomePage), starting_route)
+    apply_route(Unauthenticated(page: HomePage), starting_route)
   #(m, effect.batch([modem.init(on_url_change), route_effect]))
 }
 
-fn on_url_change(uri: Uri) -> model.Msg {
-  model.RouterChangedRoute(router.parse(uri))
+fn on_url_change(uri: Uri) -> Msg {
+  RouterChangedRoute(router.parse(uri))
 }
 
-fn update(m: model.Model, msg: model.Msg) -> #(model.Model, Effect(model.Msg)) {
+fn update(m: Model, msg: Msg) -> #(Model, Effect(Msg)) {
   case msg {
-    model.RouterChangedRoute(route) -> apply_route(m, route)
+    RouterChangedRoute(route) -> apply_route(m, route)
     _ -> dispatch_msg(m, msg)
   }
 }
 
-fn dispatch_msg(
-  m: model.Model,
-  msg: model.Msg,
-) -> #(model.Model, Effect(model.Msg)) {
+fn dispatch_msg(m: Model, msg: Msg) -> #(Model, Effect(Msg)) {
   case m {
-    model.Registering(username:, phase:) ->
-      update_register(username, phase, msg)
-    model.Unauthenticated(page: model.LoginPage(state:, username:)) ->
+    Registering(username:, phase:) -> update_register(username, phase, msg)
+    Unauthenticated(page: LoginPage(state:, username:)) ->
       update_login(state, username, msg)
     _ -> #(m, effect.none())
   }
 }
 
-fn apply_route(
-  m: model.Model,
-  route: router.Route,
-) -> #(model.Model, Effect(model.Msg)) {
+fn apply_route(m: Model, route: router.Route) -> #(Model, Effect(Msg)) {
   let abort_eff = abort_in_flight_conditional(m)
   let #(next, route_eff) = case route {
-    router.Home -> #(model.Unauthenticated(page: model.HomePage), effect.none())
+    router.Home -> #(Unauthenticated(page: HomePage), effect.none())
     router.Register -> #(
-      model.Registering(
+      Registering(
         username: previous_username(m),
-        phase: model.RegisterIdle(status: model.RegisterStart),
+        phase: RegisterIdle(status: RegisterStart),
       ),
       effect.none(),
     )
     router.Login -> #(
-      model.Unauthenticated(page: model.LoginPage(
-        state: model.LoginCheckingAutofill,
+      Unauthenticated(page: LoginPage(
+        state: LoginCheckingAutofill,
         username: "",
       )),
       check_autofill_support_effect(),
     )
     router.Welcome -> welcome_route(m)
     router.NotFound(uri:) -> #(
-      model.Unauthenticated(page: model.NotFoundPage(uri:)),
+      Unauthenticated(page: NotFoundPage(uri:)),
       effect.none(),
     )
   }
   #(next, effect.batch([abort_eff, route_eff]))
 }
 
-fn abort_in_flight_conditional(m: model.Model) -> Effect(model.Msg) {
+fn abort_in_flight_conditional(m: Model) -> Effect(Msg) {
   case m {
-    model.Unauthenticated(page: model.LoginPage(
-      state: model.LoginConditional,
-      ..,
-    )) -> abort_conditional_effect()
+    Unauthenticated(page: LoginPage(state: LoginConditional, ..)) ->
+      abort_conditional_effect()
     _ -> effect.none()
   }
 }
 
-fn welcome_route(m: model.Model) -> #(model.Model, Effect(model.Msg)) {
+fn welcome_route(m: Model) -> #(Model, Effect(Msg)) {
   case m {
-    model.Authenticated(..) -> #(m, effect.none())
-    model.Unauthenticated(..) | model.Registering(..) -> #(
+    Authenticated(..) -> #(m, effect.none())
+    Unauthenticated(..) | Registering(..) -> #(
       m,
       modem.push(router.to_path(router.Home), option.None, option.None),
     )
   }
 }
 
-fn previous_username(m: model.Model) -> String {
+fn previous_username(m: Model) -> String {
   case m {
-    model.Registering(username:, ..) -> username
+    Registering(username:, ..) -> username
     _ -> ""
   }
 }
 
-fn registering(username: String, phase: model.RegisterPhase) -> model.Model {
-  model.Registering(username:, phase:)
+fn registering(username: String, phase: RegisterPhase) -> Model {
+  Registering(username:, phase:)
 }
 
-fn login_model(state: model.LoginState, username: String) -> model.Model {
-  model.Unauthenticated(page: model.LoginPage(state:, username:))
+fn login_model(state: LoginState, username: String) -> Model {
+  Unauthenticated(page: LoginPage(state:, username:))
 }
 
 fn update_register(
   username: String,
-  phase: model.RegisterPhase,
-  msg: model.Msg,
-) -> #(model.Model, Effect(model.Msg)) {
+  phase: RegisterPhase,
+  msg: Msg,
+) -> #(Model, Effect(Msg)) {
   case phase, msg {
-    model.RegisterIdle(..), model.UserTypedRegisterUsername(typed) -> #(
-      registering(typed, model.RegisterIdle(status: model.RegisterStart)),
+    RegisterIdle(..), UserTypedRegisterUsername(typed) -> #(
+      registering(typed, RegisterIdle(status: RegisterStart)),
       effect.none(),
     )
-    model.RegisterIdle(..), model.UserClickedRegister -> #(
-      registering(username, model.RegisterBeginning),
-      api.register_begin(username, model.BackendBeganRegistration),
+    RegisterIdle(..), UserClickedRegister -> #(
+      registering(username, RegisterBeginning),
+      api.register_begin(username, BackendBeganRegistration),
     )
-    model.RegisterBeginning, model.BackendBeganRegistration(Ok(options)) -> #(
-      registering(username, model.RegisterAwaitingAuthenticator),
+    RegisterBeginning, BackendBeganRegistration(Ok(options)) -> #(
+      registering(username, RegisterAwaitingAuthenticator),
       registration_effect(options),
     )
-    model.RegisterBeginning, model.BackendBeganRegistration(Error(message)) -> #(
-      registering(
-        username,
-        model.RegisterIdle(status: model.RegisterFailed(message)),
-      ),
+    RegisterBeginning, BackendBeganRegistration(Error(message)) -> #(
+      registering(username, RegisterIdle(status: RegisterFailed(message))),
       effect.none(),
     )
-    model.RegisterAwaitingAuthenticator,
-      model.AuthenticatorFinishedRegistration(Ok(response))
+    RegisterAwaitingAuthenticator,
+      AuthenticatorFinishedRegistration(Ok(response))
     -> #(
-      registering(username, model.RegisterVerifying),
-      api.register_complete(response, model.BackendFinishedRegistration),
+      registering(username, RegisterVerifying),
+      api.register_complete(response, BackendFinishedRegistration),
     )
-    model.RegisterAwaitingAuthenticator,
-      model.AuthenticatorFinishedRegistration(Error(error))
+    RegisterAwaitingAuthenticator,
+      AuthenticatorFinishedRegistration(Error(error))
     -> #(
       registering(
         username,
-        model.RegisterIdle(
-          status: model.RegisterFailed(glasskey_error_to_string(error)),
-        ),
+        RegisterIdle(status: RegisterFailed(glasskey_error_to_string(error))),
       ),
       effect.none(),
     )
-    model.RegisterVerifying, model.BackendFinishedRegistration(Ok(Nil)) -> #(
-      registering(username, model.RegisterIdle(status: model.RegisterSucceeded)),
+    RegisterVerifying, BackendFinishedRegistration(Ok(Nil)) -> #(
+      registering(username, RegisterIdle(status: RegisterSucceeded)),
       effect.none(),
     )
-    model.RegisterVerifying, model.BackendFinishedRegistration(Error(message))
-    -> #(
-      registering(
-        username,
-        model.RegisterIdle(status: model.RegisterFailed(message)),
-      ),
+    RegisterVerifying, BackendFinishedRegistration(Error(message)) -> #(
+      registering(username, RegisterIdle(status: RegisterFailed(message))),
       effect.none(),
     )
     _, _ -> #(registering(username, phase), effect.none())
@@ -180,93 +215,88 @@ fn update_register(
 }
 
 fn update_login(
-  state: model.LoginState,
+  state: LoginState,
   username: String,
-  msg: model.Msg,
-) -> #(model.Model, Effect(model.Msg)) {
+  msg: Msg,
+) -> #(Model, Effect(Msg)) {
   case state, msg {
-    _, model.UserTypedLoginUsername(typed) -> #(
+    _, UserTypedLoginUsername(typed) -> #(
       login_model(state, typed),
       effect.none(),
     )
-    _, model.UserClickedLogin -> begin_modal_login(state, username)
+    _, UserClickedLogin -> begin_modal_login(state, username)
 
-    model.LoginCheckingAutofill, model.BrowserReportedAutofillSupport(True) -> #(
-      login_model(model.LoginSettingUpConditional, username),
-      api.login_begin("", model.BackendBeganLogin),
+    LoginCheckingAutofill, BrowserReportedAutofillSupport(True) -> #(
+      login_model(LoginSettingUpConditional, username),
+      api.login_begin("", BackendBeganLogin),
     )
-    model.LoginCheckingAutofill, model.BrowserReportedAutofillSupport(False) -> #(
-      login_model(model.LoginReady(status: ""), username),
+    LoginCheckingAutofill, BrowserReportedAutofillSupport(False) -> #(
+      login_model(LoginReady, username),
       effect.none(),
     )
 
-    model.LoginSettingUpConditional, model.BackendBeganLogin(Ok(options)) -> #(
-      login_model(model.LoginSettingUpConditional, username),
+    LoginSettingUpConditional, BackendBeganLogin(Ok(options)) -> #(
+      login_model(LoginSettingUpConditional, username),
       start_conditional_authentication_effect(options),
     )
-    model.LoginSettingUpConditional, model.BackendBeganLogin(Error(message)) -> #(
-      login_model(model.LoginReady(status: "Error: " <> message), username),
+    LoginSettingUpConditional, BackendBeganLogin(Error(message)) -> #(
+      login_model(LoginFailed(message:), username),
       effect.none(),
     )
-    model.LoginSettingUpConditional,
-      model.BrowserStartedConditionalAuth(Ok(Nil))
-    -> #(login_model(model.LoginConditional, username), effect.none())
-    model.LoginSettingUpConditional,
-      model.BrowserStartedConditionalAuth(Error(error))
-    -> #(
+    LoginSettingUpConditional, BrowserStartedConditionalAuth(Ok(Nil)) -> #(
+      login_model(LoginConditional, username),
+      effect.none(),
+    )
+    LoginSettingUpConditional, BrowserStartedConditionalAuth(Error(error)) -> #(
       login_model(
-        model.LoginReady(status: "Error: " <> glasskey_error_to_string(error)),
+        LoginFailed(message: glasskey_error_to_string(error)),
         username,
       ),
       effect.none(),
     )
 
-    model.LoginModalBeginning, model.BackendBeganModalLogin(Ok(options)) -> #(
-      login_model(model.LoginModalAwaiting, username),
+    LoginModalBeginning, BackendBeganModalLogin(Ok(options)) -> #(
+      login_model(LoginModalAwaiting, username),
       authentication_effect(options),
     )
-    model.LoginModalBeginning, model.BackendBeganModalLogin(Error(message)) -> #(
-      login_model(model.LoginReady(status: "Error: " <> message), username),
+    LoginModalBeginning, BackendBeganModalLogin(Error(message)) -> #(
+      login_model(LoginFailed(message:), username),
       effect.none(),
     )
 
-    model.LoginModalAwaiting, model.AuthenticatorFinishedLogin(Ok(response)) -> #(
-      login_model(model.LoginVerifying, username),
-      api.login_complete(response, model.BackendFinishedLogin),
+    LoginModalAwaiting, AuthenticatorFinishedLogin(Ok(response)) -> #(
+      login_model(LoginVerifying, username),
+      api.login_complete(response, BackendFinishedLogin),
     )
-    model.LoginModalAwaiting, model.AuthenticatorFinishedLogin(Error(error)) -> #(
+    LoginModalAwaiting, AuthenticatorFinishedLogin(Error(error)) -> #(
       login_model(
-        model.LoginReady(status: "Error: " <> glasskey_error_to_string(error)),
+        LoginFailed(message: glasskey_error_to_string(error)),
         username,
       ),
       effect.none(),
     )
 
-    model.LoginConditional,
-      model.AuthenticatorFinishedConditionalLogin(Ok(response))
-    -> #(
-      login_model(model.LoginVerifying, username),
-      api.login_complete(response, model.BackendFinishedLogin),
+    LoginConditional, AuthenticatorFinishedConditionalLogin(Ok(response)) -> #(
+      login_model(LoginVerifying, username),
+      api.login_complete(response, BackendFinishedLogin),
     )
-    model.LoginConditional,
-      model.AuthenticatorFinishedConditionalLogin(Error(glasskey.Aborted))
-    -> #(login_model(model.LoginReady(status: ""), username), effect.none())
-    model.LoginConditional,
-      model.AuthenticatorFinishedConditionalLogin(Error(error))
-    -> #(
+    LoginConditional,
+      AuthenticatorFinishedConditionalLogin(Error(glasskey.Aborted))
+    -> #(login_model(LoginReady, username), effect.none())
+    LoginConditional, AuthenticatorFinishedConditionalLogin(Error(error)) -> #(
       login_model(
-        model.LoginReady(status: "Error: " <> glasskey_error_to_string(error)),
+        LoginFailed(message: glasskey_error_to_string(error)),
         username,
       ),
       effect.none(),
     )
 
-    model.LoginVerifying, model.BackendFinishedLogin(Ok(verified_username)) -> #(
-      model.Authenticated(username: verified_username),
+    LoginVerifying, BackendFinishedLogin(Ok(verified_username)) -> #(
+      Authenticated(username: verified_username),
       modem.push(router.to_path(router.Welcome), option.None, option.None),
     )
-    model.LoginVerifying, model.BackendFinishedLogin(Error(message)) -> #(
-      login_model(model.LoginReady(status: "Error: " <> message), username),
+    LoginVerifying, BackendFinishedLogin(Error(message)) -> #(
+      login_model(LoginFailed(message:), username),
       effect.none(),
     )
 
@@ -275,83 +305,23 @@ fn update_login(
 }
 
 fn begin_modal_login(
-  state: model.LoginState,
+  state: LoginState,
   username: String,
-) -> #(model.Model, Effect(model.Msg)) {
+) -> #(Model, Effect(Msg)) {
   let abort_eff = case state {
-    model.LoginConditional -> abort_conditional_effect()
+    LoginConditional -> abort_conditional_effect()
     _ -> effect.none()
   }
   #(
-    login_model(model.LoginModalBeginning, username),
-    effect.batch([
-      abort_eff,
-      api.login_begin(username, model.BackendBeganModalLogin),
-    ]),
+    login_model(LoginModalBeginning, username),
+    effect.batch([abort_eff, api.login_begin(username, BackendBeganModalLogin)]),
   )
-}
-
-fn check_autofill_support_effect() -> Effect(model.Msg) {
-  effect.from(fn(dispatch) {
-    glasskey.supports_webauthn_autofill()
-    |> promise.map(fn(supported) {
-      dispatch(model.BrowserReportedAutofillSupport(supported))
-    })
-    Nil
-  })
-}
-
-fn start_conditional_authentication_effect(
-  options: glasskey.AuthenticationOptions,
-) -> Effect(model.Msg) {
-  effect.from(fn(dispatch) {
-    case glasskey.start_conditional_authentication(options) {
-      Ok(conditional) -> {
-        set_pending_abort(conditional.abort)
-        dispatch(model.BrowserStartedConditionalAuth(Ok(Nil)))
-        conditional.result
-        |> promise.map(fn(r) {
-          dispatch(model.AuthenticatorFinishedConditionalLogin(r))
-        })
-        Nil
-      }
-      Error(error) ->
-        dispatch(model.BrowserStartedConditionalAuth(Error(error)))
-    }
-  })
-}
-
-fn abort_conditional_effect() -> Effect(model.Msg) {
-  effect.from(fn(_dispatch) { run_pending_abort() })
-}
-
-fn authentication_effect(
-  options: glasskey.AuthenticationOptions,
-) -> Effect(model.Msg) {
-  effect.from(fn(dispatch) {
-    glasskey.start_authentication(options)
-    |> promise.map(fn(result) {
-      dispatch(model.AuthenticatorFinishedLogin(result))
-    })
-    Nil
-  })
-}
-
-fn registration_effect(
-  options: glasskey.RegistrationOptions,
-) -> Effect(model.Msg) {
-  effect.from(fn(dispatch) {
-    glasskey.start_registration(options)
-    |> promise.map(fn(result) {
-      dispatch(model.AuthenticatorFinishedRegistration(result))
-    })
-    Nil
-  })
 }
 
 fn glasskey_error_to_string(error: glasskey.Error) -> String {
   case error {
-    glasskey.NotSupported -> "WebAuthn is not supported in this browser"
+    glasskey.NotSupported ->
+      "WebAuthn is unavailable or the authenticator does not support the requested options"
     glasskey.NotAllowed -> "Operation was not allowed or was cancelled"
     glasskey.Aborted -> "Operation was aborted"
     glasskey.SecurityError -> "Security error occurred"
@@ -359,4 +329,216 @@ fn glasskey_error_to_string(error: glasskey.Error) -> String {
       "Authenticator state conflict (credential may already be registered)"
     glasskey.UnknownError(message) -> "Unknown error: " <> message
   }
+}
+
+@external(javascript, "./frontend_ffi.mjs", "setPendingAbort")
+fn set_pending_abort(abort: fn() -> Nil) -> Nil
+
+@external(javascript, "./frontend_ffi.mjs", "runPendingAbort")
+fn run_pending_abort() -> Nil
+
+fn check_autofill_support_effect() -> Effect(Msg) {
+  effect.from(fn(dispatch) {
+    glasskey.supports_webauthn_autofill()
+    |> promise.map(fn(supported) {
+      dispatch(BrowserReportedAutofillSupport(supported))
+    })
+    Nil
+  })
+}
+
+fn start_conditional_authentication_effect(
+  options: glasskey.AuthenticationOptions,
+) -> Effect(Msg) {
+  effect.from(fn(dispatch) {
+    case glasskey.start_conditional_authentication(options) {
+      Ok(conditional) -> {
+        set_pending_abort(conditional.abort)
+        dispatch(BrowserStartedConditionalAuth(Ok(Nil)))
+        conditional.result
+        |> promise.map(fn(r) {
+          dispatch(AuthenticatorFinishedConditionalLogin(r))
+        })
+        Nil
+      }
+      Error(error) -> dispatch(BrowserStartedConditionalAuth(Error(error)))
+    }
+  })
+}
+
+fn abort_conditional_effect() -> Effect(Msg) {
+  effect.from(fn(_dispatch) { run_pending_abort() })
+}
+
+fn authentication_effect(
+  options: glasskey.AuthenticationOptions,
+) -> Effect(Msg) {
+  effect.from(fn(dispatch) {
+    glasskey.start_authentication(options)
+    |> promise.map(fn(result) { dispatch(AuthenticatorFinishedLogin(result)) })
+    Nil
+  })
+}
+
+fn registration_effect(options: glasskey.RegistrationOptions) -> Effect(Msg) {
+  effect.from(fn(dispatch) {
+    glasskey.start_registration(options)
+    |> promise.map(fn(result) {
+      dispatch(AuthenticatorFinishedRegistration(result))
+    })
+    Nil
+  })
+}
+
+fn root(m: Model) -> Element(Msg) {
+  html.main([attribute.class("app")], [
+    case m {
+      Unauthenticated(page: HomePage) -> home()
+      Unauthenticated(page: LoginPage(state:, username:)) ->
+        login(state, username)
+      Unauthenticated(page: NotFoundPage(uri:)) -> not_found(uri)
+      Registering(username:, phase:) -> register(username, phase)
+      Authenticated(username:) -> welcome(username)
+    },
+  ])
+}
+
+fn back_link() -> Element(Msg) {
+  html.p([], [html.a([router.href(router.Home)], [html.text("Back to home")])])
+}
+
+fn home() -> Element(Msg) {
+  html.div([], [
+    html.h1([], [html.text("Glasskey Demo")]),
+    html.p([], [html.text("WebAuthn passkey authentication demo.")]),
+    html.div([attribute.class("stack")], [
+      html.a([attribute.class("button"), router.href(router.Register)], [
+        html.text("Register a new passkey"),
+      ]),
+      html.a([attribute.class("button"), router.href(router.Login)], [
+        html.text("Sign in with a passkey"),
+      ]),
+    ]),
+  ])
+}
+
+fn login(state: LoginState, username: String) -> Element(Msg) {
+  let loading = is_login_loading(state)
+  html.div([], [
+    html.h1([], [html.text("Sign In")]),
+    html.form(
+      [attribute.class("stack"), event.on_submit(fn(_) { UserClickedLogin })],
+      [
+        // The `webauthn` autocomplete token anchors browser passkey autofill
+        // during conditional mediation. When autofill is dismissed, the typed
+        // value is sent to the backend so credentials are filtered to that user.
+        html.input([
+          attribute.type_("text"),
+          attribute.name("username"),
+          attribute.placeholder("Username"),
+          attribute.attribute("autocomplete", "username webauthn"),
+          attribute.value(username),
+          attribute.disabled(loading),
+          event.on_input(UserTypedLoginUsername),
+        ]),
+        html.button([attribute.disabled(loading)], [
+          html.text("Sign in with passkey"),
+        ]),
+      ],
+    ),
+    status(login_status(state)),
+    back_link(),
+  ])
+}
+
+fn is_login_loading(state: LoginState) -> Bool {
+  case state {
+    LoginCheckingAutofill -> False
+    LoginSettingUpConditional -> False
+    LoginConditional -> False
+    LoginReady -> False
+    LoginFailed(..) -> False
+    LoginModalBeginning -> True
+    LoginModalAwaiting -> True
+    LoginVerifying -> True
+  }
+}
+
+fn login_status(state: LoginState) -> String {
+  case state {
+    LoginFailed(message:) -> "Error: " <> message
+    _ -> ""
+  }
+}
+
+fn register(username: String, phase: RegisterPhase) -> Element(Msg) {
+  let loading = is_register_loading(phase)
+  html.div([], [
+    html.h1([], [html.text("Register")]),
+    html.div([attribute.class("stack")], [
+      html.input([
+        attribute.type_("text"),
+        attribute.placeholder("Username"),
+        attribute.value(username),
+        attribute.disabled(loading),
+        event.on_input(UserTypedRegisterUsername),
+      ]),
+      html.button(
+        [
+          event.on_click(UserClickedRegister),
+          attribute.disabled(loading || username == ""),
+        ],
+        [html.text("Register")],
+      ),
+    ]),
+    status(register_status(phase)),
+    back_link(),
+  ])
+}
+
+fn is_register_loading(phase: RegisterPhase) -> Bool {
+  case phase {
+    RegisterIdle(..) -> False
+    RegisterBeginning -> True
+    RegisterAwaitingAuthenticator -> True
+    RegisterVerifying -> True
+  }
+}
+
+fn register_status(phase: RegisterPhase) -> String {
+  case phase {
+    RegisterIdle(status: RegisterStart) -> ""
+    RegisterIdle(status: RegisterSucceeded) -> "Registration successful!"
+    RegisterIdle(status: RegisterFailed(message)) -> "Error: " <> message
+    _ -> ""
+  }
+}
+
+fn status(text: String) -> Element(Msg) {
+  case text {
+    "" -> element.none()
+    message -> html.p([attribute.class("status")], [html.text(message)])
+  }
+}
+
+fn welcome(username: String) -> Element(Msg) {
+  html.div([], [
+    html.h1([], [html.text("Welcome, " <> username <> "!")]),
+    html.p([], [html.text("You have successfully authenticated.")]),
+    html.a([attribute.class("button"), router.href(router.Home)], [
+      html.text("Log out"),
+    ]),
+  ])
+}
+
+fn not_found(uri: Uri) -> Element(Msg) {
+  html.div([], [
+    html.h1([], [html.text("Page not found")]),
+    html.p([], [
+      html.text("No page matches "),
+      html.code([], [html.text(uri.path)]),
+      html.text("."),
+    ]),
+    back_link(),
+  ])
 }
