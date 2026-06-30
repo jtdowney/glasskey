@@ -37,75 +37,22 @@ pub type AuthenticationCredential {
   )
 }
 
+@internal
+pub type InternalAuthenticationOptions {
+  InternalAuthenticationOptions(
+    challenge: BitArray,
+    rp_id: Option(String),
+    timeout: Option(Int),
+    user_verification: Option(Requirement),
+    allow_credentials: List(CredentialDescriptor),
+  )
+}
+
 /// Parsed authentication ceremony options from the server.
 ///
 /// Construct with [`authentication_options_decoder`](#authentication_options_decoder).
-pub opaque type AuthenticationOptions {
-  AuthenticationOptions(
-    /// Raw challenge bytes.
-    challenge: BitArray,
-    /// Relying party identifier (effective domain). `None` lets the browser
-    /// fall back to the calling document's origin.
-    rp_id: Option(String),
-    /// Ceremony timeout in milliseconds. `None` lets the browser apply its
-    /// default.
-    timeout: Option(Int),
-    /// User verification requirement. `None` lets the browser apply the spec
-    /// default of `preferred`.
-    user_verification: Option(Requirement),
-    /// Credentials the user may authenticate with. An empty list selects
-    /// the discoverable (passkey) flow.
-    allow_credentials: List(CredentialDescriptor),
-  )
-}
-
-@internal
-pub fn authentication_options(
-  challenge challenge: BitArray,
-  rp_id rp_id: Option(String),
-  timeout timeout: Option(Int),
-  user_verification user_verification: Option(Requirement),
-  allow_credentials allow_credentials: List(CredentialDescriptor),
-) -> AuthenticationOptions {
-  AuthenticationOptions(
-    challenge:,
-    rp_id:,
-    timeout:,
-    user_verification:,
-    allow_credentials:,
-  )
-}
-
-@internal
-pub type AuthenticationOptionsFields {
-  AuthenticationOptionsFields(
-    challenge: BitArray,
-    rp_id: Option(String),
-    timeout: Option(Int),
-    user_verification: Option(Requirement),
-    allow_credentials: List(CredentialDescriptor),
-  )
-}
-
-@internal
-pub fn authentication_options_fields(
-  options: AuthenticationOptions,
-) -> AuthenticationOptionsFields {
-  let AuthenticationOptions(
-    challenge:,
-    rp_id:,
-    timeout:,
-    user_verification:,
-    allow_credentials:,
-  ) = options
-  AuthenticationOptionsFields(
-    challenge:,
-    rp_id:,
-    timeout:,
-    user_verification:,
-    allow_credentials:,
-  )
-}
+pub type AuthenticationOptions =
+  InternalAuthenticationOptions
 
 /// A reference to a previously registered credential, with optional
 /// transport hints to help the browser route the ceremony to the right
@@ -207,129 +154,31 @@ pub type RegistrationCredential {
   )
 }
 
+@internal
+pub type InternalRegistrationOptions {
+  InternalRegistrationOptions(
+    challenge: BitArray,
+    rp_id: String,
+    rp_name: String,
+    user_id: BitArray,
+    user_name: String,
+    user_display_name: String,
+    algorithms: List(Algorithm),
+    timeout: Option(Int),
+    resident_key: Option(Requirement),
+    user_verification: Option(Requirement),
+    authenticator_attachment: Option(AuthenticatorAttachment),
+    exclude_credentials: List(CredentialDescriptor),
+  )
+}
+
 /// Parsed registration ceremony options from the server.
 ///
 /// Construct with [`registration_options_decoder`](#registration_options_decoder).
-pub opaque type RegistrationOptions {
-  RegistrationOptions(
-    /// Raw challenge bytes.
-    challenge: BitArray,
-    /// Relying party identifier (effective domain).
-    rp_id: String,
-    /// Human-readable relying party name shown to the user.
-    rp_name: String,
-    /// Opaque user handle as raw bytes.
-    user_id: BitArray,
-    /// Username shown in the browser's account chooser.
-    user_name: String,
-    /// Human-readable display name shown to the user.
-    user_display_name: String,
-    /// Accepted signing algorithms in preference order. The authenticator
-    /// picks the first it supports. Always non-empty.
-    algorithms: List(Algorithm),
-    /// Ceremony timeout in milliseconds. `None` lets the browser apply its
-    /// default.
-    timeout: Option(Int),
-    /// Discoverable credential requirement. `None` lets the browser apply
-    /// the spec default of `discouraged`.
-    resident_key: Option(Requirement),
-    /// User verification requirement. `None` lets the browser apply the spec
-    /// default of `preferred`.
-    user_verification: Option(Requirement),
-    /// Restrict the authenticator class. `None` allows any.
-    authenticator_attachment: Option(AuthenticatorAttachment),
-    /// Credentials to exclude (prevent re-registration of an existing
-    /// authenticator).
-    exclude_credentials: List(CredentialDescriptor),
-  )
-}
+pub type RegistrationOptions =
+  InternalRegistrationOptions
 
-@internal
-pub fn registration_options(
-  challenge challenge: BitArray,
-  rp_id rp_id: String,
-  rp_name rp_name: String,
-  user_id user_id: BitArray,
-  user_name user_name: String,
-  user_display_name user_display_name: String,
-  algorithms algorithms: List(Algorithm),
-  timeout timeout: Option(Int),
-  resident_key resident_key: Option(Requirement),
-  user_verification user_verification: Option(Requirement),
-  authenticator_attachment authenticator_attachment: Option(
-    AuthenticatorAttachment,
-  ),
-  exclude_credentials exclude_credentials: List(CredentialDescriptor),
-) -> RegistrationOptions {
-  RegistrationOptions(
-    challenge:,
-    rp_id:,
-    rp_name:,
-    user_id:,
-    user_name:,
-    user_display_name:,
-    algorithms:,
-    timeout:,
-    resident_key:,
-    user_verification:,
-    authenticator_attachment:,
-    exclude_credentials:,
-  )
-}
-
-@internal
-pub type RegistrationOptionsFields {
-  RegistrationOptionsFields(
-    challenge: BitArray,
-    rp_id: String,
-    rp_name: String,
-    user_id: BitArray,
-    user_name: String,
-    user_display_name: String,
-    algorithms: List(Algorithm),
-    timeout: Option(Int),
-    resident_key: Option(Requirement),
-    user_verification: Option(Requirement),
-    authenticator_attachment: Option(AuthenticatorAttachment),
-    exclude_credentials: List(CredentialDescriptor),
-  )
-}
-
-@internal
-pub fn registration_options_fields(
-  options: RegistrationOptions,
-) -> RegistrationOptionsFields {
-  let RegistrationOptions(
-    challenge:,
-    rp_id:,
-    rp_name:,
-    user_id:,
-    user_name:,
-    user_display_name:,
-    algorithms:,
-    timeout:,
-    resident_key:,
-    user_verification:,
-    authenticator_attachment:,
-    exclude_credentials:,
-  ) = options
-  RegistrationOptionsFields(
-    challenge:,
-    rp_id:,
-    rp_name:,
-    user_id:,
-    user_name:,
-    user_display_name:,
-    algorithms:,
-    timeout:,
-    resident_key:,
-    user_verification:,
-    authenticator_attachment:,
-    exclude_credentials:,
-  )
-}
-
-/// WebAuthn requirement level for resident keys or user verification.
+/// WebAuthn preference used for resident keys and user verification.
 pub type Requirement {
   /// Require the authenticator to satisfy the request.
   Required
@@ -536,7 +385,7 @@ pub fn authentication_options_decoder() -> decode.Decoder(AuthenticationOptions)
     [],
     credential_descriptor_list_decoder(),
   )
-  decode.success(AuthenticationOptions(
+  decode.success(InternalAuthenticationOptions(
     challenge:,
     rp_id:,
     timeout:,
@@ -580,7 +429,7 @@ pub fn registration_options_decoder() -> decode.Decoder(RegistrationOptions) {
     [],
     credential_descriptor_list_decoder(),
   )
-  decode.success(RegistrationOptions(
+  decode.success(InternalRegistrationOptions(
     challenge:,
     rp_id:,
     rp_name:,

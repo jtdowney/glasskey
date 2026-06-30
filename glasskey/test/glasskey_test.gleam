@@ -56,7 +56,7 @@ fn default_registration_fixture() -> RegistrationFixture {
 }
 
 fn default_registration_options() -> glasskey.RegistrationOptions {
-  glasskey.registration_options(
+  glasskey.InternalRegistrationOptions(
     challenge: <<1, 2, 3, 4>>,
     rp_id: "example.com",
     rp_name: "Example",
@@ -73,7 +73,7 @@ fn default_registration_options() -> glasskey.RegistrationOptions {
 }
 
 fn default_authentication_options() -> glasskey.AuthenticationOptions {
-  glasskey.authentication_options(
+  glasskey.InternalAuthenticationOptions(
     challenge: <<9, 10, 11>>,
     rp_id: option.Some("example.com"),
     timeout: option.None,
@@ -224,8 +224,6 @@ pub fn decode_registration_options_test() {
     )
 
   let assert Ok(opt) = decode.run(dyn, glasskey.registration_options_decoder())
-  let opt = glasskey.registration_options_fields(opt)
-
   assert opt.challenge == <<"test-challenge":utf8>>
   assert opt.rp_id == "example.com"
   assert opt.rp_name == "My App"
@@ -250,8 +248,6 @@ pub fn decode_registration_options_with_exclude_credentials_test() {
     )
 
   let assert Ok(opt) = decode.run(dyn, glasskey.registration_options_decoder())
-  let opt = glasskey.registration_options_fields(opt)
-
   assert opt.exclude_credentials
     == [
       glasskey.CredentialDescriptor(id: <<1, 2, 3>>, transports: [
@@ -292,7 +288,6 @@ pub fn decode_registration_options_omits_authenticator_selection_test() {
     ])
 
   let assert Ok(opt) = decode.run(dyn, glasskey.registration_options_decoder())
-  let opt = glasskey.registration_options_fields(opt)
   assert opt.resident_key == option.None
   assert opt.user_verification == option.None
   assert opt.authenticator_attachment == option.None
@@ -330,7 +325,6 @@ pub fn decode_registration_options_authenticator_selection_inner_omitted_test() 
     ])
 
   let assert Ok(opt) = decode.run(dyn, glasskey.registration_options_decoder())
-  let opt = glasskey.registration_options_fields(opt)
   assert opt.resident_key == option.None
   assert opt.user_verification == option.None
   assert opt.authenticator_attachment == option.None
@@ -375,8 +369,6 @@ pub fn decode_registration_options_explicit_null_optional_fields_test() {
     ])
 
   let assert Ok(opt) = decode.run(dyn, glasskey.registration_options_decoder())
-  let opt = glasskey.registration_options_fields(opt)
-
   assert opt.timeout == option.None
   assert opt.resident_key == option.None
   assert opt.user_verification == option.None
@@ -424,8 +416,7 @@ pub fn decode_registration_options_mixed_algorithms_filters_unknown_test() {
 
   let assert Ok(options) =
     decode.run(dyn, glasskey.registration_options_decoder())
-  assert glasskey.registration_options_fields(options).algorithms
-    == [glasskey.Es256]
+  assert options.algorithms == [glasskey.Es256]
 }
 
 pub fn decode_registration_options_empty_algorithms_test() {
@@ -510,8 +501,6 @@ pub fn decode_authentication_options_test() {
 
   let assert Ok(opt) =
     decode.run(dyn, glasskey.authentication_options_decoder())
-  let opt = glasskey.authentication_options_fields(opt)
-
   assert opt.challenge == <<"test-challenge":utf8>>
   assert opt.rp_id == option.Some("example.com")
   assert opt.timeout == option.Some(60_000)
@@ -544,8 +533,6 @@ pub fn decode_authentication_options_drops_unknown_transports_test() {
 
   let assert Ok(opt) =
     decode.run(dyn, glasskey.authentication_options_decoder())
-  let opt = glasskey.authentication_options_fields(opt)
-
   assert opt.allow_credentials
     == [
       glasskey.CredentialDescriptor(id: <<1, 2, 3>>, transports: [
@@ -582,8 +569,6 @@ pub fn decode_authentication_options_with_allow_credentials_test() {
 
   let assert Ok(opt) =
     decode.run(dyn, glasskey.authentication_options_decoder())
-  let opt = glasskey.authentication_options_fields(opt)
-
   assert opt.allow_credentials
     == [
       glasskey.CredentialDescriptor(id: <<1, 2, 3>>, transports: [
@@ -602,8 +587,6 @@ pub fn decode_authentication_options_minimal_test() {
 
   let assert Ok(opt) =
     decode.run(dyn, glasskey.authentication_options_decoder())
-  let opt = glasskey.authentication_options_fields(opt)
-
   assert opt.challenge == <<"test":utf8>>
   assert opt.rp_id == option.None
   assert opt.timeout == option.None
@@ -622,8 +605,6 @@ pub fn decode_authentication_options_explicit_null_optional_fields_test() {
 
   let assert Ok(opt) =
     decode.run(dyn, glasskey.authentication_options_decoder())
-  let opt = glasskey.authentication_options_fields(opt)
-
   assert opt.rp_id == option.None
   assert opt.timeout == option.None
   assert opt.user_verification == option.None
@@ -712,7 +693,6 @@ pub fn decode_registration_options_roundtrip_test() {
       ),
     )
   let assert Ok(opt) = decode.run(dyn, glasskey.registration_options_decoder())
-  let opt = glasskey.registration_options_fields(opt)
   assert opt.challenge == challenge
   assert opt.user_id == user_id
   assert opt.rp_name == rp_name
@@ -974,7 +954,7 @@ pub fn start_registration_passes_options_to_navigator_test() {
   )
 
   let opts =
-    glasskey.registration_options(
+    glasskey.InternalRegistrationOptions(
       challenge: <<99, 100, 101, 102>>,
       rp_id: "passes.example",
       rp_name: "Example",
@@ -1040,7 +1020,7 @@ pub fn start_registration_omits_authenticator_selection_when_all_none_test() {
   )
 
   let opts =
-    glasskey.registration_options(
+    glasskey.InternalRegistrationOptions(
       challenge: <<1, 2, 3, 4>>,
       rp_id: "example.com",
       rp_name: "Example",
@@ -1075,7 +1055,7 @@ pub fn start_registration_emits_explicit_authenticator_selection_test() {
   )
 
   let opts =
-    glasskey.registration_options(
+    glasskey.InternalRegistrationOptions(
       challenge: <<1, 2, 3, 4>>,
       rp_id: "example.com",
       rp_name: "Example",
@@ -1219,7 +1199,7 @@ pub fn start_authentication_passes_options_to_navigator_test() {
   )
 
   let opts =
-    glasskey.authentication_options(
+    glasskey.InternalAuthenticationOptions(
       challenge: <<9, 10, 11>>,
       rp_id: option.Some("example.com"),
       timeout: option.Some(45_000),
@@ -1261,7 +1241,7 @@ pub fn start_authentication_omits_optional_fields_when_none_test() {
   )
 
   let opts =
-    glasskey.authentication_options(
+    glasskey.InternalAuthenticationOptions(
       challenge: <<9, 10, 11>>,
       rp_id: option.Some("example.com"),
       timeout: option.None,
