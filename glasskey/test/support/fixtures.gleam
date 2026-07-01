@@ -5,7 +5,7 @@
 //// so the decoders run). If those glasslock snapshots change, update these
 //// builders and re-accept the matching glasskey snapshots.
 
-import gleam/json
+import gleam/json.{type Json}
 
 pub fn registration_options_json() -> String {
   json.object([
@@ -69,10 +69,7 @@ pub fn authentication_options_json() -> String {
   |> json.to_string
 }
 
-fn credential_descriptor(
-  id_b64: String,
-  transports: List(String),
-) -> json.Json {
+fn credential_descriptor(id_b64: String, transports: List(String)) -> Json {
   let base = [
     #("id", json.string(id_b64)),
     #("type", json.string("public-key")),
@@ -84,7 +81,7 @@ fn credential_descriptor(
   json.object(fields)
 }
 
-fn pub_key_cred_param(alg: Int) -> json.Json {
+fn pub_key_cred_param(alg: Int) -> Json {
   json.object([
     #("type", json.string("public-key")),
     #("alg", json.int(alg)),

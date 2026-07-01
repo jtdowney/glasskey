@@ -437,7 +437,9 @@ pub fn decode_registration_options_invalid_pub_key_cred_param_type_test() {
       ),
     )
 
-  let assert Error(_) = decode.run(dyn, glasskey.registration_options_decoder())
+  let assert Error([decode.DecodeError(expected:, ..), ..]) =
+    decode.run(dyn, glasskey.registration_options_decoder())
+  assert expected == "public-key credential type"
 }
 
 pub fn decode_registration_options_missing_pub_key_cred_param_type_test() {
@@ -462,7 +464,9 @@ pub fn decode_registration_options_invalid_exclude_credentials_type_test() {
       ),
     )
 
-  let assert Error(_) = decode.run(dyn, glasskey.registration_options_decoder())
+  let assert Error([decode.DecodeError(expected:, ..), ..]) =
+    decode.run(dyn, glasskey.registration_options_decoder())
+  assert expected == "public-key credential type"
 }
 
 pub fn decode_registration_options_missing_exclude_credentials_type_test() {
@@ -625,8 +629,9 @@ pub fn decode_authentication_options_invalid_allow_credentials_type_test() {
       ),
     ])
 
-  let assert Error(_) =
+  let assert Error([decode.DecodeError(expected:, ..), ..]) =
     decode.run(dyn, glasskey.authentication_options_decoder())
+  assert expected == "public-key credential type"
 }
 
 pub fn decode_authentication_options_missing_allow_credentials_type_test() {
@@ -661,8 +666,9 @@ pub fn decode_authentication_options_unknown_user_verification_test() {
       #(dynamic.string("challenge"), dynamic.string("dGVzdA")),
       #(dynamic.string("userVerification"), dynamic.string("bogus-value")),
     ])
-  let assert Error(_) =
+  let assert Error([decode.DecodeError(expected:, ..), ..]) =
     decode.run(dyn, glasskey.authentication_options_decoder())
+  assert expected == "requirement"
 }
 
 pub fn decode_authentication_options_malformed_challenge_test() {
@@ -670,8 +676,9 @@ pub fn decode_authentication_options_malformed_challenge_test() {
     dynamic.properties([
       #(dynamic.string("challenge"), dynamic.string("not!valid$base64")),
     ])
-  let assert Error(_) =
+  let assert Error([decode.DecodeError(expected:, ..), ..]) =
     decode.run(dyn, glasskey.authentication_options_decoder())
+  assert expected == "base64url"
 }
 
 pub fn decode_registration_options_roundtrip_test() {
@@ -804,6 +811,8 @@ pub fn start_registration_succeeds_with_credential_test() {
   let assert Ok(json_value) = result
   let json_string = json.to_string(json_value)
   let decoder = {
+    use id <- decode.field("id", decode.string)
+    use type_ <- decode.field("type", decode.string)
     use raw_id <- decode.field("rawId", decode.string)
     use client_data_json <- decode.subfield(
       ["response", "clientDataJSON"],
@@ -813,10 +822,12 @@ pub fn start_registration_succeeds_with_credential_test() {
       ["response", "attestationObject"],
       decode.string,
     )
-    decode.success(#(raw_id, client_data_json, attestation_object))
+    decode.success(#(id, type_, raw_id, client_data_json, attestation_object))
   }
-  let assert Ok(#(raw_id, client_data_json, attestation_object)) =
+  let assert Ok(#(id, type_, raw_id, client_data_json, attestation_object)) =
     json.parse(json_string, decoder)
+  assert id == "fixture-cred-id"
+  assert type_ == "public-key"
   assert raw_id == "AQID"
   assert client_data_json == "e30"
   assert attestation_object == "BwgJ"
@@ -1107,17 +1118,33 @@ pub fn start_authentication_succeeds_with_user_handle_test() {
   let assert Ok(json_value) = result
   let json_string = json.to_string(json_value)
   let decoder = {
+    use id <- decode.field("id", decode.string)
+    use type_ <- decode.field("type", decode.string)
     use raw_id <- decode.field("rawId", decode.string)
+    use authenticator_data <- decode.subfield(
+      ["response", "authenticatorData"],
+      decode.string,
+    )
     use signature <- decode.subfield(["response", "signature"], decode.string)
     use user_handle <- decode.subfield(
       ["response", "userHandle"],
       decode.optional(decode.string),
     )
-    decode.success(#(raw_id, signature, user_handle))
+    decode.success(#(
+      id,
+      type_,
+      raw_id,
+      authenticator_data,
+      signature,
+      user_handle,
+    ))
   }
-  let assert Ok(#(raw_id, signature, user_handle)) =
+  let assert Ok(#(id, type_, raw_id, authenticator_data, signature, user_handle)) =
     json.parse(json_string, decoder)
+  assert id == "fixture-assert-id"
+  assert type_ == "public-key"
   assert raw_id == "ChQe"
+  assert authenticator_data == "RlBa"
   assert signature == "ZG54"
   assert user_handle == option.Some("AQI")
 
@@ -1283,17 +1310,33 @@ pub fn start_conditional_authentication_resolves_to_assertion_test() {
   let assert Ok(json_value) = result
   let json_string = json.to_string(json_value)
   let decoder = {
+    use id <- decode.field("id", decode.string)
+    use type_ <- decode.field("type", decode.string)
     use raw_id <- decode.field("rawId", decode.string)
+    use authenticator_data <- decode.subfield(
+      ["response", "authenticatorData"],
+      decode.string,
+    )
     use signature <- decode.subfield(["response", "signature"], decode.string)
     use user_handle <- decode.subfield(
       ["response", "userHandle"],
       decode.optional(decode.string),
     )
-    decode.success(#(raw_id, signature, user_handle))
+    decode.success(#(
+      id,
+      type_,
+      raw_id,
+      authenticator_data,
+      signature,
+      user_handle,
+    ))
   }
-  let assert Ok(#(raw_id, signature, user_handle)) =
+  let assert Ok(#(id, type_, raw_id, authenticator_data, signature, user_handle)) =
     json.parse(json_string, decoder)
+  assert id == "fixture-assert-id"
+  assert type_ == "public-key"
   assert raw_id == "ChQe"
+  assert authenticator_data == "RlBa"
   assert signature == "ZG54"
   assert user_handle == option.Some("AQI")
 
