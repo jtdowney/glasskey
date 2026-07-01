@@ -11,7 +11,7 @@
 </script>
 
 <svelte:head>
-  <title>Welcome · Glasskey</title>
+  <title>Welcome | Glasskey</title>
 </svelte:head>
 
 <h1>Welcome, {data.username}!</h1>

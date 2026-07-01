@@ -8,9 +8,9 @@
   let busy = $state(false);
   let username = $state("");
 
-  function finishLogin(username) {
+  function finishLogin(who) {
     // Demo-only: stored so /welcome can show the name, not an auth signal.
-    sessionStorage.setItem("username", username);
+    sessionStorage.setItem("username", who);
     goto(resolve("/welcome"));
   }
 
@@ -41,12 +41,12 @@
   });
 
   async function handleLogin(event) {
-    event?.preventDefault?.();
+    event.preventDefault();
     WebAuthnAbortService.cancelCeremony();
     busy = true;
     status = "Waiting for authenticator...";
     try {
-      const who = await login(username);
+      const who = await login(username.trim());
       finishLogin(who);
     } catch (err) {
       status = `Error: ${err.message ?? err}`;
@@ -57,7 +57,7 @@
 </script>
 
 <svelte:head>
-  <title>Sign In · Glasskey</title>
+  <title>Sign In | Glasskey</title>
 </svelte:head>
 
 <h1>Sign In</h1>

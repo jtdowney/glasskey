@@ -1,7 +1,7 @@
 import frontend/api
 import frontend/router
 import glasskey
-import gleam/javascript/promise
+import gleam/javascript/promise.{type Promise}
 import gleam/json.{type Json}
 import gleam/option
 import gleam/uri.{type Uri}
@@ -337,14 +337,18 @@ fn set_pending_abort(abort: fn() -> Nil) -> Nil
 @external(javascript, "./frontend_ffi.mjs", "runPendingAbort")
 fn run_pending_abort() -> Nil
 
-fn check_autofill_support_effect() -> Effect(Msg) {
+fn dispatch_promise(promise: Promise(a), to_msg: fn(a) -> Msg) -> Effect(Msg) {
   effect.from(fn(dispatch) {
-    glasskey.supports_webauthn_autofill()
-    |> promise.map(fn(supported) {
-      dispatch(BrowserReportedAutofillSupport(supported))
-    })
+    promise.map(promise, fn(value) { dispatch(to_msg(value)) })
     Nil
   })
+}
+
+fn check_autofill_support_effect() -> Effect(Msg) {
+  dispatch_promise(
+    glasskey.supports_webauthn_autofill(),
+    BrowserReportedAutofillSupport,
+  )
 }
 
 fn start_conditional_authentication_effect(
@@ -373,21 +377,17 @@ fn abort_conditional_effect() -> Effect(Msg) {
 fn authentication_effect(
   options: glasskey.AuthenticationOptions,
 ) -> Effect(Msg) {
-  effect.from(fn(dispatch) {
-    glasskey.start_authentication(options)
-    |> promise.map(fn(result) { dispatch(AuthenticatorFinishedLogin(result)) })
-    Nil
-  })
+  dispatch_promise(
+    glasskey.start_authentication(options),
+    AuthenticatorFinishedLogin,
+  )
 }
 
 fn registration_effect(options: glasskey.RegistrationOptions) -> Effect(Msg) {
-  effect.from(fn(dispatch) {
-    glasskey.start_registration(options)
-    |> promise.map(fn(result) {
-      dispatch(AuthenticatorFinishedRegistration(result))
-    })
-    Nil
-  })
+  dispatch_promise(
+    glasskey.start_registration(options),
+    AuthenticatorFinishedRegistration,
+  )
 }
 
 fn root(m: Model) -> Element(Msg) {

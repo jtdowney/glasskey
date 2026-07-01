@@ -7,7 +7,7 @@ import gleam/list
 import gleam/result
 import gleam/string
 import mist
-import non_empty_list
+import non_empty_list.{type NonEmptyList}
 import wisp
 import wisp/wisp_mist
 
@@ -50,9 +50,7 @@ pub fn main() {
   process.sleep_forever()
 }
 
-fn parse_origins(
-  raw: String,
-) -> Result(non_empty_list.NonEmptyList(String), Nil) {
+fn parse_origins(raw: String) -> Result(NonEmptyList(String), Nil) {
   raw
   |> string.split(",")
   |> list.map(string.trim)

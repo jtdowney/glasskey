@@ -117,9 +117,10 @@ fn decode_verified(
     use verified <- decode.field("verified", decode.bool)
     decode.success(verified)
   }
-  case decode_response(result, decoder) {
-    Ok(True) -> Ok(Nil)
-    Ok(False) -> Error("Verification failed")
-    Error(e) -> Error(e)
+
+  use verified <- result.try(decode_response(result, decoder))
+  case verified {
+    True -> Ok(Nil)
+    False -> Error("Verification failed")
   }
 }

@@ -26,7 +26,7 @@
 </script>
 
 <svelte:head>
-  <title>Register · Glasskey</title>
+  <title>Register | Glasskey</title>
 </svelte:head>
 
 <h1>Register</h1>
