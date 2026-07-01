@@ -682,13 +682,14 @@ pub fn decode_authentication_options_malformed_challenge_test() {
 }
 
 pub fn decode_registration_options_roundtrip_test() {
-  use inputs <- qcheck.given(qcheck.tuple4(
-    qcheck.byte_aligned_bit_array(),
-    qcheck.byte_aligned_bit_array(),
-    qcheck.string(),
-    qcheck.string(),
-  ))
-  let #(challenge, user_id, rp_name, user_display_name) = inputs
+  use #(challenge, user_id, rp_name, user_display_name) <- qcheck.given(
+    qcheck.tuple4(
+      qcheck.byte_aligned_bit_array(),
+      qcheck.byte_aligned_bit_array(),
+      qcheck.string(),
+      qcheck.string(),
+    ),
+  )
   let dyn =
     build_registration_options(
       RegistrationFixture(

@@ -1050,11 +1050,10 @@ pub fn verify_discoverable_flow_test() {
 }
 
 pub fn parse_response_roundtrip_test() {
-  use inputs <- qcheck.given(qcheck.tuple2(
+  use #(credential_id, user_handle) <- qcheck.given(qcheck.tuple2(
     qcheck.byte_aligned_bit_array(),
     qcheck.option_from(qcheck.byte_aligned_bit_array()),
   ))
-  let #(credential_id, user_handle) = inputs
 
   let user_handle_json =
     option.map(user_handle, fn(bytes) {
@@ -1130,14 +1129,13 @@ pub fn parse_response_rejects_id_raw_id_mismatch_test() {
 
 pub fn sign_count_monotonicity_test() {
   let config = qcheck.default_config() |> qcheck.with_test_count(100)
-  use inputs <- qcheck.run(
+  use #(stored, new) <- qcheck.run(
     config,
     qcheck.tuple2(
       qcheck.bounded_int(1, 1_000_000),
       qcheck.bounded_int(1, 1_000_000),
     ),
   )
-  let #(stored, new) = inputs
   let keypair = testing.generate_es256_keypair()
   let credential_id = crypto.random_bytes(16)
   let public_key = testing.public_key(keypair)
@@ -1188,22 +1186,27 @@ pub fn sign_count_monotonicity_test() {
 }
 
 pub fn encode_decode_roundtrip_preserves_challenge_test() {
-  use inputs <- qcheck.given(qcheck.tuple6(
-    qcheck.non_empty_string(),
-    helpers.non_empty_list_from(qcheck.non_empty_string()),
-    qcheck.list_from(credential_descriptor_generator()),
-    qcheck.list_from(qcheck.non_empty_string()),
-    qcheck.bool(),
-    helpers.user_verification_generator(),
-  ))
-  let #(
-    relying_party_id,
-    origins,
-    allow_credentials,
-    allowed_top_origins,
-    allow_cross_origin,
-    user_verification,
-  ) = inputs
+  let config = qcheck.default_config() |> qcheck.with_test_count(100)
+  use
+    #(
+      relying_party_id,
+      origins,
+      allow_credentials,
+      allowed_top_origins,
+      allow_cross_origin,
+      user_verification,
+    )
+  <- qcheck.run(
+    config,
+    qcheck.tuple6(
+      qcheck.non_empty_string(),
+      helpers.non_empty_list_from(qcheck.non_empty_string()),
+      qcheck.list_from(credential_descriptor_generator()),
+      qcheck.list_from(qcheck.non_empty_string()),
+      qcheck.bool(),
+      helpers.user_verification_generator(),
+    ),
+  )
   let assert [first_origin, ..rest_origins] = origins
 
   let builder =

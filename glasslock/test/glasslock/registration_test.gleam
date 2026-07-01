@@ -638,22 +638,27 @@ pub fn verify_rejects_credential_algorithm_not_requested_test() {
 }
 
 pub fn encode_decode_roundtrip_preserves_challenge_test() {
-  use inputs <- qcheck.given(qcheck.tuple6(
-    qcheck.non_empty_string(),
-    helpers.non_empty_list_from(qcheck.non_empty_string()),
-    helpers.non_empty_list_from(algorithm_generator()),
-    qcheck.list_from(qcheck.non_empty_string()),
-    qcheck.bool(),
-    helpers.user_verification_generator(),
-  ))
-  let #(
-    rp_id,
-    origins,
-    algorithms,
-    allowed_top_origins,
-    allow_cross_origin,
-    user_verification,
-  ) = inputs
+  let config = qcheck.default_config() |> qcheck.with_test_count(100)
+  use
+    #(
+      rp_id,
+      origins,
+      algorithms,
+      allowed_top_origins,
+      allow_cross_origin,
+      user_verification,
+    )
+  <- qcheck.run(
+    config,
+    qcheck.tuple6(
+      qcheck.non_empty_string(),
+      helpers.non_empty_list_from(qcheck.non_empty_string()),
+      helpers.non_empty_list_from(algorithm_generator()),
+      qcheck.list_from(qcheck.non_empty_string()),
+      qcheck.bool(),
+      helpers.user_verification_generator(),
+    ),
+  )
   let assert [first_origin, ..rest_origins] = origins
 
   let initial_builder =
