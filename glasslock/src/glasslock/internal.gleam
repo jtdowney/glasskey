@@ -101,9 +101,12 @@ pub fn extract_attestation_fields(
   case cbor {
     cbor.Map(entries) -> {
       use auth_data <- result.try(get_cbor_bytes(entries, "authData"))
-      use att_stmt <- result.try(find_string_entry(entries, "attStmt"))
-      use fmt <- result.try(get_cbor_string(entries, "fmt"))
-      Ok(#(auth_data, att_stmt, fmt))
+      use attestation_statement <- result.try(find_entry_by_key(
+        entries,
+        "attStmt",
+      ))
+      use format <- result.try(get_cbor_string(entries, "fmt"))
+      Ok(#(auth_data, attestation_statement, format))
     }
     cbor.Int(_) | cbor.Bytes(_) | cbor.String(_) ->
       Error(ParseError("Attestation object must be a map"))
@@ -115,7 +118,7 @@ pub fn parse_attestation_object(data: BitArray) -> Result(cbor.Cbor, Error) {
   |> result.map_error(ParseError)
 }
 
-fn find_string_entry(
+fn find_entry_by_key(
   entries: List(#(cbor.Cbor, cbor.Cbor)),
   key: String,
 ) -> Result(cbor.Cbor, Error) {
@@ -127,7 +130,7 @@ fn get_cbor_bytes(
   entries: List(#(cbor.Cbor, cbor.Cbor)),
   key: String,
 ) -> Result(BitArray, Error) {
-  use v <- result.try(find_string_entry(entries, key))
+  use v <- result.try(find_entry_by_key(entries, key))
   case v {
     cbor.Bytes(bytes) -> Ok(bytes)
     cbor.Int(_) | cbor.String(_) | cbor.Map(_) ->
@@ -139,7 +142,7 @@ fn get_cbor_string(
   entries: List(#(cbor.Cbor, cbor.Cbor)),
   key: String,
 ) -> Result(String, Error) {
-  use v <- result.try(find_string_entry(entries, key))
+  use v <- result.try(find_entry_by_key(entries, key))
   case v {
     cbor.String(s) -> Ok(s)
     cbor.Int(_) | cbor.Bytes(_) | cbor.Map(_) ->

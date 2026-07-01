@@ -483,7 +483,10 @@ pub fn verify(
     )),
   )
 
-  use _ <- result.try(check_sign_count(stored.sign_count, auth_data.sign_count))
+  use _ <- result.try(check_sign_count(
+    stored: stored.sign_count,
+    new: auth_data.sign_count,
+  ))
 
   Ok(glasslock.Credential(..stored, sign_count: auth_data.sign_count))
 }
