@@ -200,7 +200,11 @@ fn parse_attested_credential(
   has_extensions: Bool,
 ) -> Result(AttestedCredential, Error) {
   case data {
-    <<aaguid:bytes-size(16), cred_id_len:16-big-unsigned, rest:bytes>> ->
+    <<aaguid:bytes-size(16), cred_id_len:16-big-unsigned, rest:bytes>> -> {
+      use <- bool.guard(
+        when: cred_id_len > 1023,
+        return: Error(ParseError("Credential ID exceeds 1023 bytes")),
+      )
       case rest {
         <<cred_id:bytes-size(cred_id_len), key_and_rest:bytes>> -> {
           use public_key_cbor <- result.try(split_cose_key(
@@ -215,6 +219,7 @@ fn parse_attested_credential(
         }
         _ -> Error(ParseError("Invalid attested credential data"))
       }
+    }
     _ -> Error(ParseError("Missing attested credential data"))
   }
 }

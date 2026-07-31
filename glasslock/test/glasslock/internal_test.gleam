@@ -102,6 +102,52 @@ pub fn parse_registration_auth_data_missing_credential_test() {
     == Error(internal.ParseError("No attested credential in registration"))
 }
 
+pub fn parse_registration_auth_data_accepts_max_credential_id_test() {
+  let credential_id = <<0:size(1023 * 8)>>
+  let auth_data =
+    testing.build_registration_authenticator_data(
+      relying_party_id: "example.com",
+      credential_id:,
+      cose_key_cbor: testing.generate_es256_keypair() |> testing.cose_key,
+      flags: testing.default_flags,
+      sign_count: 0,
+    )
+
+  let assert Ok(parsed) = internal.parse_registration_auth_data(auth_data)
+  assert parsed.attested_credential.credential_id == credential_id
+}
+
+pub fn parse_registration_auth_data_rejects_oversized_credential_id_test() {
+  let auth_data =
+    testing.build_registration_authenticator_data(
+      relying_party_id: "example.com",
+      credential_id: <<0:size(1024 * 8)>>,
+      cose_key_cbor: testing.generate_es256_keypair() |> testing.cose_key,
+      flags: testing.default_flags,
+      sign_count: 0,
+    )
+
+  assert internal.parse_registration_auth_data(auth_data)
+    == Error(internal.ParseError("Credential ID exceeds 1023 bytes"))
+}
+
+pub fn parse_registration_auth_data_rejects_truncated_credential_id_test() {
+  let assert Ok(rp_id_hash) =
+    crypto.hash(hash.Sha256, bit_array.from_string("example.com"))
+  let auth_data =
+    bit_array.concat([
+      rp_id_hash,
+      <<0x41>>,
+      <<0:32>>,
+      <<0:128>>,
+      <<1023:16>>,
+      <<0>>,
+    ])
+
+  assert internal.parse_registration_auth_data(auth_data)
+    == Error(internal.ParseError("Invalid attested credential data"))
+}
+
 pub fn parse_authentication_auth_data_ignores_extensions_test() {
   let assert Ok(rp_id_hash) =
     crypto.hash(hash.Sha256, bit_array.from_string("example.com"))
