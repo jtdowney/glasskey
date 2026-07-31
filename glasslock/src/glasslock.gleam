@@ -1,5 +1,9 @@
 //// Server-side WebAuthn/FIDO2 credential verification for Gleam.
 
+import glasslock/internal/cbor
+import gleam/bool
+import gleam/int
+import gleam/list
 import gleam/result
 import gose
 import gose/cose
@@ -37,15 +41,21 @@ pub type PublicKeyError {
 /// when loading a credential from storage before passing to
 /// `authentication.verify`.
 pub fn parse_public_key(bytes: BitArray) -> Result(PublicKey, PublicKeyError) {
+  use key_cbor <- result.try(
+    cbor.decode_all(bytes)
+    |> result.map_error(InvalidPublicKey),
+  )
+  let canonical_bytes = cbor.encode(key_cbor)
   use parsed_key <- result.try(
-    cose.key_from_cbor(bytes)
+    cose.key_from_cbor(canonical_bytes)
     |> result.map_error(map_gose_error_to_public_key_error),
   )
   use sig_alg <- result.try(extract_signature_alg(parsed_key))
-  Ok(PublicKey(bytes:, key: parsed_key, alg: sig_alg))
+  use _ <- result.try(validate_public_key_cbor(key_cbor))
+  Ok(PublicKey(bytes: canonical_bytes, key: parsed_key, alg: sig_alg))
 }
 
-/// Serialize a `PublicKey` back to its wire-format COSE bytes.
+/// Serialize a `PublicKey` to canonical public-only COSE bytes.
 ///
 /// The returned bytes round-trip through [`parse_public_key`](#parse_public_key). Use when
 /// persisting a credential to storage.
@@ -72,6 +82,85 @@ fn extract_signature_alg(
       Error(UnsupportedPublicKey("key algorithm is not a signature algorithm"))
     Error(_) ->
       Error(UnsupportedPublicKey("COSE key missing algorithm (label 3)"))
+  }
+}
+
+fn validate_public_key_cbor(key: cbor.Cbor) -> Result(Nil, PublicKeyError) {
+  case key {
+    cbor.Map(entries) -> {
+      use key_type <- result.try(public_key_int(entries, label: 1, name: "kty"))
+      use algorithm <- result.try(public_key_int(entries, label: 3, name: "alg"))
+      case key_type, algorithm {
+        2, -7 ->
+          validate_curve_and_labels(
+            entries,
+            labels: [1, 3, -1, -2, -3],
+            expected_curve: 1,
+          )
+        1, -8 ->
+          validate_curve_and_labels(
+            entries,
+            labels: [1, 3, -1, -2],
+            expected_curve: 6,
+          )
+        3, -257 -> validate_labels(entries, expected: [1, 3, -1, -2])
+        _, _ ->
+          Error(UnsupportedPublicKey(
+            "unsupported WebAuthn key type or algorithm",
+          ))
+      }
+    }
+    cbor.Int(_) | cbor.Bytes(_) | cbor.String(_) ->
+      Error(InvalidPublicKey("COSE_Key must be a CBOR map"))
+  }
+}
+
+fn validate_curve_and_labels(
+  entries: List(#(cbor.Cbor, cbor.Cbor)),
+  labels labels: List(Int),
+  expected_curve expected_curve: Int,
+) -> Result(Nil, PublicKeyError) {
+  use _ <- result.try(validate_labels(entries, expected: labels))
+  use curve <- result.try(public_key_int(entries, label: -1, name: "curve"))
+  use <- bool.guard(
+    when: curve != expected_curve,
+    return: Error(UnsupportedPublicKey("unsupported WebAuthn key curve")),
+  )
+  Ok(Nil)
+}
+
+fn validate_labels(
+  entries: List(#(cbor.Cbor, cbor.Cbor)),
+  expected expected: List(Int),
+) -> Result(Nil, PublicKeyError) {
+  use labels <- result.try(
+    list.try_map(entries, fn(entry) {
+      case entry.0 {
+        cbor.Int(label) -> Ok(label)
+        cbor.Bytes(_) | cbor.String(_) | cbor.Map(_) ->
+          Error(InvalidPublicKey("COSE_Key labels must be integers"))
+      }
+    }),
+  )
+  use <- bool.guard(
+    when: list.sort(labels, int.compare) != list.sort(expected, int.compare),
+    return: Error(InvalidPublicKey(
+      "credential public key contains missing, duplicate, or forbidden parameters",
+    )),
+  )
+  Ok(Nil)
+}
+
+fn public_key_int(
+  entries: List(#(cbor.Cbor, cbor.Cbor)),
+  label label: Int,
+  name name: String,
+) -> Result(Int, PublicKeyError) {
+  case list.key_find(entries, cbor.Int(label)) {
+    Ok(cbor.Int(value)) -> Ok(value)
+    Ok(cbor.Bytes(_)) | Ok(cbor.String(_)) | Ok(cbor.Map(_)) ->
+      Error(InvalidPublicKey(name <> " must be an integer"))
+    Error(_) -> Error(InvalidPublicKey("missing " <> name))
   }
 }
 

@@ -1,10 +1,13 @@
 import glasslock
 import glasslock/internal/cbor
 import glasslock/testing
+import gleam/bit_array
 import gleam/list
 import gose
 import gose/cose
 import kryptos/ec
+import kryptos/eddsa
+import kryptos/xdh
 import unitest
 
 pub fn main() -> Nil {
@@ -207,4 +210,104 @@ pub fn parse_public_key_rejects_rsa_missing_e_test() {
   let cbor_bytes = cbor.encode(cose_map)
   let assert Error(glasslock.InvalidPublicKey(_)) =
     glasslock.parse_public_key(cbor_bytes)
+}
+
+fn encode_key_with_alg(
+  key: cose.Key,
+  alg alg: gose.DigitalSignatureAlg,
+) -> BitArray {
+  let assert Ok(bytes) =
+    key
+    |> gose.with_alg(gose.SigningAlg(gose.DigitalSignature(alg)))
+    |> cose.key_to_cbor
+  bytes
+}
+
+fn encode_map_in_order(entries: List(#(cbor.Cbor, cbor.Cbor))) -> BitArray {
+  let count = list.length(entries)
+  let payload =
+    list.map(entries, fn(entry) {
+      bit_array.concat([cbor.encode(entry.0), cbor.encode(entry.1)])
+    })
+    |> bit_array.concat
+  bit_array.concat([<<5:3, count:5>>, payload])
+}
+
+pub fn parse_public_key_canonicalizes_encoding_test() {
+  let canonical = testing.generate_es256_keypair() |> testing.cose_key
+  let assert Ok(cbor.Map(entries)) = cbor.decode_all(canonical)
+  let noncanonical = entries |> list.reverse |> encode_map_in_order
+  assert noncanonical != canonical
+
+  let assert Ok(public_key) = glasslock.parse_public_key(noncanonical)
+  assert glasslock.encode_public_key(public_key) == canonical
+}
+
+pub fn parse_public_key_rejects_symmetric_and_xdh_keys_test() {
+  let assert Ok(symmetric) = gose.from_octet_bits(<<0:256>>)
+  let assert Ok(xdh_public) =
+    gose.generate_xdh(xdh.X25519)
+    |> gose.public_key
+
+  let keys = [
+    #(symmetric, gose.Ecdsa(gose.EcdsaP256)),
+    #(xdh_public, gose.Eddsa),
+  ]
+  list.each(keys, fn(entry) {
+    let assert Error(_) =
+      encode_key_with_alg(entry.0, alg: entry.1)
+      |> glasslock.parse_public_key
+  })
+}
+
+pub fn parse_public_key_rejects_private_parameters_test() {
+  let assert Ok(rsa) = gose.generate_rsa(2048)
+  let keys = [
+    #(gose.generate_ec(ec.P256), gose.Ecdsa(gose.EcdsaP256)),
+    #(gose.generate_eddsa(eddsa.Ed25519), gose.Eddsa),
+    #(rsa, gose.RsaPkcs1(gose.RsaPkcs1Sha256)),
+  ]
+  list.each(keys, fn(entry) {
+    let assert Error(_) =
+      encode_key_with_alg(entry.0, alg: entry.1)
+      |> glasslock.parse_public_key
+  })
+}
+
+pub fn parse_public_key_rejects_optional_parameters_test() {
+  let assert Ok(public) =
+    gose.generate_ec(ec.P256)
+    |> gose.public_key
+  let bytes =
+    public
+    |> gose.with_kid_bits(<<1, 2, 3, 4>>)
+    |> encode_key_with_alg(alg: gose.Ecdsa(gose.EcdsaP256))
+
+  let assert Error(_) = glasslock.parse_public_key(bytes)
+}
+
+pub fn parse_public_key_rejects_algorithm_and_curve_mismatches_test() {
+  let assert Ok(ec_public) =
+    gose.generate_ec(ec.P256)
+    |> gose.public_key
+  let assert Ok(p384_public) =
+    gose.generate_ec(ec.P384)
+    |> gose.public_key
+  let assert Ok(ed25519_public) =
+    gose.generate_eddsa(eddsa.Ed25519)
+    |> gose.public_key
+  let assert Ok(rsa) = gose.generate_rsa(2048)
+  let assert Ok(rsa_public) = gose.public_key(rsa)
+
+  let keys = [
+    #(ec_public, gose.Eddsa),
+    #(p384_public, gose.Ecdsa(gose.EcdsaP256)),
+    #(ed25519_public, gose.Ecdsa(gose.EcdsaP256)),
+    #(rsa_public, gose.Ecdsa(gose.EcdsaP256)),
+  ]
+  list.each(keys, fn(entry) {
+    let assert Error(_) =
+      encode_key_with_alg(entry.0, alg: entry.1)
+      |> glasslock.parse_public_key
+  })
 }

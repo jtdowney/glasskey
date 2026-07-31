@@ -11,6 +11,9 @@ import gleam/option
 import gleam/set
 import gleam/string
 import gleam/time/duration
+import gose
+import gose/cose
+import kryptos/ec
 import qcheck
 import support/helpers
 
@@ -61,28 +64,64 @@ fn build_response(
   flags flags: testing.AuthenticatorFlags,
 ) -> String {
   let keypair = testing.generate_es256_keypair()
+  build_response_with_cose_key(
+    challenge:,
+    cose_key_cbor: testing.cose_key(keypair),
+    flags:,
+  )
+}
+
+fn build_response_with_cose_key(
+  challenge challenge: registration.Challenge,
+  cose_key_cbor cose_key_cbor: BitArray,
+  flags flags: testing.AuthenticatorFlags,
+) -> String {
+  build_response_with(
+    challenge:,
+    relying_party_id: registration.challenge_data(challenge).rp_id,
+    cose_key_cbor:,
+    flags:,
+    format: "none",
+    attestation_statement: [],
+  )
+}
+
+fn build_response_with(
+  challenge challenge: registration.Challenge,
+  relying_party_id relying_party_id: String,
+  cose_key_cbor cose_key_cbor: BitArray,
+  flags flags: testing.AuthenticatorFlags,
+  format format: String,
+  attestation_statement attestation_statement: List(#(String, Int)),
+) -> String {
   let credential_id = <<1, 2, 3, 4, 5, 6, 7, 8, 9, 10>>
   let authenticator_data =
     testing.build_registration_authenticator_data(
-      relying_party_id: testing.registration_challenge_rp_id(challenge),
+      relying_party_id:,
       credential_id:,
-      cose_key_cbor: testing.cose_key(keypair),
+      cose_key_cbor:,
       flags:,
       sign_count: 0,
     )
   let client_data_json =
     testing.build_client_data_create(
-      challenge: testing.registration_challenge_bytes(challenge),
+      challenge: registration.challenge_data(challenge).bytes,
       origin: "https://example.com",
       cross_origin: False,
     )
-  testing.to_registration_json_with(
-    credential_id:,
-    client_data_json:,
-    attestation_object: testing.build_attestation_object(auth_data),
-    credential_type: "public-key",
-    transports: [],
-    id_override: option.None,
+  testing.to_registration_json(
+    testing.RegistrationResponse(
+      id: bit_array.base64_url_encode(credential_id, False),
+      credential_id:,
+      credential_type: "public-key",
+      client_data_json:,
+      attestation_object: testing.build_attestation_object(
+        format:,
+        authenticator_data:,
+        attestation_statement:,
+      ),
+      transports: [],
+    ),
   )
 }
 
@@ -635,6 +674,48 @@ pub fn verify_rejects_credential_algorithm_not_requested_test() {
     == Error(registration.UnsupportedKey(
       "credential algorithm does not match requested algorithms",
     ))
+}
+
+pub fn verify_rejects_key_type_algorithm_mismatch_test() {
+  let challenge = setup_challenge()
+  let assert Ok(symmetric) = gose.from_octet_bits(<<0:256>>)
+  let assert Ok(cose_key_cbor) =
+    symmetric
+    |> gose.with_alg(
+      gose.SigningAlg(gose.DigitalSignature(gose.Ecdsa(gose.EcdsaP256))),
+    )
+    |> cose.key_to_cbor
+  let response_json =
+    build_response_with_cose_key(
+      challenge:,
+      cose_key_cbor:,
+      flags: testing.default_flags,
+    )
+
+  let assert Error(registration.UnsupportedKey(_)) =
+    registration.verify_json(response_json:, challenge:)
+}
+
+pub fn verify_rejects_algorithm_curve_mismatch_test() {
+  let challenge = setup_challenge()
+  let assert Ok(public) =
+    gose.generate_ec(ec.P384)
+    |> gose.public_key
+  let assert Ok(cose_key_cbor) =
+    public
+    |> gose.with_alg(
+      gose.SigningAlg(gose.DigitalSignature(gose.Ecdsa(gose.EcdsaP256))),
+    )
+    |> cose.key_to_cbor
+  let response_json =
+    build_response_with_cose_key(
+      challenge:,
+      cose_key_cbor:,
+      flags: testing.default_flags,
+    )
+
+  let assert Error(registration.UnsupportedKey(_)) =
+    registration.verify_json(response_json:, challenge:)
 }
 
 pub fn encode_decode_roundtrip_preserves_challenge_test() {
