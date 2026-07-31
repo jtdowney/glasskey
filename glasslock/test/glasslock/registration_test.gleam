@@ -149,6 +149,10 @@ pub fn request_emits_core_fields_test() {
   assert bit_array.byte_size(registration.challenge_data(challenge).bytes) == 32
 }
 
+pub fn random_user_id_has_16_bytes_test() {
+  assert bit_array.byte_size(registration.random_user_id()) == 16
+}
+
 pub fn request_with_exclude_credentials_test() {
   let cred1 = <<1, 2, 3, 4>>
   let cred2 = <<5, 6, 7, 8>>

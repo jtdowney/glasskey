@@ -92,8 +92,8 @@ pub type User {
     /// uniquely identifies the user to the authenticator. WebAuthn requires
     /// random bytes not derived from personal information (email, username,
     /// etc.), so authenticators cannot correlate the user across relying
-    /// parties. Generate once per user (e.g. `crypto.strong_random_bytes(16)`)
-    /// and persist alongside the account.
+    /// parties. Generate once per user with [`random_user_id`](#random_user_id)
+    /// and persist it alongside the account.
     id: BitArray,
     /// A human-readable identifier for the account, typically the login the
     /// user enters (username or email). Shown by the authenticator during
@@ -103,6 +103,14 @@ pub type User {
     /// for display.
     display_name: String,
   )
+}
+
+/// Generate a random 16-byte WebAuthn user ID.
+///
+/// Generate one ID per account and persist it. Pass that same ID in later
+/// registration ceremonies for the account.
+pub fn random_user_id() -> BitArray {
+  crypto.random_bytes(16)
 }
 
 /// Errors that can occur during registration verification.

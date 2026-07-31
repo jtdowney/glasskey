@@ -3,7 +3,6 @@ import backend/web
 import glasslock
 import glasslock/registration
 import gleam/bit_array
-import gleam/crypto
 import gleam/dynamic/decode
 import gleam/json
 import gleam/list
@@ -66,7 +65,7 @@ fn begin_registration(
       // Random opaque user handle. WebAuthn requires user.id to contain
       // no PII so credentials can't be used to correlate accounts across
       // relying parties.
-      let user_id = crypto.strong_random_bytes(16)
+      let user_id = registration.random_user_id()
 
       // Resident key is required so the credential lives on the authenticator
       // and the demo can exercise the discoverable (passkey) sign-in flow.
