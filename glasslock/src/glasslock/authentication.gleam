@@ -175,7 +175,11 @@ type ParsedResponse {
 ///
 /// Defaults: 1-minute timeout, no allowed credentials (discoverable/passkey
 /// flow), cross-origin disallowed. Layer on optional configuration with the
-/// setter functions before calling `build`.
+/// setter functions before calling [`build`](#build).
+///
+/// `relying_party_id` must be a domain string such as `"example.com"`, without
+/// a scheme, port, or path. The browser validates the domain syntax and whether
+/// this RP ID is allowed for the calling origin.
 pub fn new(
   relying_party_id relying_party_id: String,
   origin origin: String,

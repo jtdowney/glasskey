@@ -75,9 +75,9 @@ pub type ResidentKey {
 /// application).
 pub type RelyingParty {
   RelyingParty(
-    /// A valid domain string identifying the Relying Party, e.g.
-    /// `"example.com"`. The browser binds credentials to this value, so it
-    /// must match the effective domain of the page calling WebAuthn.
+    /// A domain string identifying the Relying Party (`"example.com"`).
+    /// Do not include a scheme, port, or path. The browser validates the
+    /// domain syntax and whether this RP ID is allowed for the calling origin.
     id: String,
     /// A human-readable name shown to the user by the authenticator during
     /// registration.
@@ -88,19 +88,19 @@ pub type RelyingParty {
 /// User information for registration.
 pub type User {
   User(
-    /// An opaque user handle (max 64 bytes) that uniquely identifies the
-    /// user to the authenticator. The WebAuthn spec requires this be random
-    /// bytes that are not derived from personal information (email,
-    /// username, etc.), so authenticators cannot correlate the user across
-    /// relying parties. Generate once per user (e.g.
-    /// `crypto.strong_random_bytes(16)`) and persist alongside the account.
+    /// An opaque handle containing between 1 and 64 bytes, inclusive, that
+    /// uniquely identifies the user to the authenticator. WebAuthn requires
+    /// random bytes not derived from personal information (email, username,
+    /// etc.), so authenticators cannot correlate the user across relying
+    /// parties. Generate once per user (e.g. `crypto.strong_random_bytes(16)`)
+    /// and persist alongside the account.
     id: BitArray,
-    /// A human-palatable identifier for the account, typically the login
-    /// the user enters (username or email). Shown by the authenticator
-    /// during account selection.
+    /// A human-readable identifier for the account, typically the login the
+    /// user enters (username or email). Shown by the authenticator during
+    /// account selection.
     name: String,
-    /// A human-palatable name for the user (e.g. `"Jane Doe"`), intended
-    /// only for display.
+    /// A human-readable name for the user (e.g. `"Lucy"`), intended only
+    /// for display.
     display_name: String,
   )
 }
