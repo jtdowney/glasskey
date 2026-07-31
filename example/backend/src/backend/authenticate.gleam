@@ -45,9 +45,9 @@ fn begin_for_username(
   ctx: web.Context,
   username: option.Option(String),
 ) -> wisp.Response {
-  case allow_credentials_for_username(ctx, username) {
+  case authentication_context_for_username(ctx, username) {
     Error(_) -> web.error_response("user not found", 404)
-    Ok(allow_credentials) -> {
+    Ok(#(allow_credentials, already_identified)) -> {
       // User verification is preferred (the WebAuthn default) so the demo
       // works on authenticators without UV capability while still requesting
       // it when supported. Tighten to `VerificationRequired` for a deployment
@@ -71,7 +71,15 @@ fn begin_for_username(
         })
       let #(options_json, challenge) = authentication.build(builder)
 
-      let encoded = authentication.encode_challenge(challenge)
+      let encoded =
+        json.object([
+          #(
+            "challenge",
+            json.string(authentication.encode_challenge(challenge)),
+          ),
+          #("already_identified", json.bool(already_identified)),
+        ])
+        |> json.to_string
 
       json.object([#("options", options_json)])
       |> json.to_string
@@ -87,17 +95,20 @@ fn begin_for_username(
   }
 }
 
-fn allow_credentials_for_username(
+fn authentication_context_for_username(
   ctx: web.Context,
   username: option.Option(String),
-) -> Result(List(#(BitArray, List(glasslock.Transport))), Nil) {
+) -> Result(#(List(#(BitArray, List(glasslock.Transport))), Bool), Nil) {
   case option.map(username, string.trim) {
-    option.None -> Ok([])
-    option.Some("") -> Ok([])
+    option.None -> Ok(#([], False))
+    option.Some("") -> Ok(#([], False))
     option.Some(name) ->
       credentials.get_user(ctx.credentials, name)
       |> result.map(fn(user) {
-        list.map(user.credentials, fn(cred) { #(cred.id, cred.transports) })
+        #(
+          list.map(user.credentials, fn(cred) { #(cred.id, cred.transports) }),
+          True,
+        )
       })
   }
 }
@@ -126,8 +137,17 @@ fn complete_authentication(
       wisp.get_cookie(req, session_cookie, wisp.Signed)
       |> result.replace_error(#("session not found", 400)),
     )
+    let session_decoder = {
+      use challenge <- decode.field("challenge", decode.string)
+      use already_identified <- decode.field("already_identified", decode.bool)
+      decode.success(#(challenge, already_identified))
+    }
+    use #(encoded_challenge, already_identified) <- result.try(
+      json.parse(encoded, session_decoder)
+      |> result.replace_error(#("session not found", 400)),
+    )
     use challenge <- result.try(
-      authentication.parse_challenge(encoded)
+      authentication.parse_challenge(encoded_challenge)
       |> result.replace_error(#("session not found", 400)),
     )
     use info <- result.try(
@@ -144,8 +164,17 @@ fn complete_authentication(
       list.find(user.credentials, fn(cred) { cred.id == info.credential_id })
       |> result.replace_error(#("credential not found", 400)),
     )
+    let authentication_user = case already_identified {
+      True -> authentication.AlreadyIdentifiedUser(user.user_id)
+      False -> authentication.DiscoveredUser(user.user_id)
+    }
     use updated_credential <- result.try(
-      authentication.verify(response:, challenge:, stored: stored_credential)
+      authentication.verify(
+        response:,
+        challenge:,
+        stored: stored_credential,
+        user: authentication_user,
+      )
       |> result.map_error(fn(err) {
         #("verification failed: " <> describe_error(err), 400)
       }),
@@ -192,6 +221,7 @@ fn describe_field(field: glasslock.VerificationField) -> String {
     glasslock.TopOriginField -> "top origin not allowed"
     glasslock.CredentialIdField -> "credential id mismatch"
     glasslock.CredentialTypeField -> "credential type mismatch"
+    glasslock.UserHandleField -> "user handle mismatch"
   }
 }
 

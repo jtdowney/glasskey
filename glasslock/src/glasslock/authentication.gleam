@@ -24,7 +24,12 @@
 //// // `authentication.parse_challenge`.
 ////
 //// // Verify the response
-//// case authentication.verify_json(response_json:, challenge:, stored: stored_credential) {
+//// case authentication.verify_json(
+////   response_json:,
+////   challenge:,
+////   stored: stored_credential,
+////   user: authentication.AlreadyIdentifiedUser(account.user_handle),
+//// ) {
 ////   Ok(updated_credential) -> todo as "update stored sign_count"
 ////   Error(e) -> todo as "handle error"
 //// }
@@ -42,14 +47,20 @@
 ////   |> authentication.build()
 ////
 //// // Serialize `options` and send to the browser. Parse the response,
-//// // look up the credential, then verify with the same parsed
-//// // `Response`. As above, keep `challenge` in memory for a single
-//// // node, or round-trip through `authentication.encode_challenge` /
+//// // resolve the owning account and credential, then verify with the same
+//// // `Response`. As above, keep `challenge` in memory for a single node, or
+//// // round-trip through `authentication.encode_challenge` /
 //// // `authentication.parse_challenge` to span processes.
 //// use response <- result.try(authentication.parse_response_json(response_json))
 //// use info <- result.try(authentication.response_info(response))
-//// use stored <- result.try(lookup_credential(info.credential_id))
-//// authentication.verify(response:, challenge:, stored:)
+//// use account <- result.try(lookup_account_by_credential_id(info.credential_id))
+//// use stored <- result.try(find_credential(account, info.credential_id))
+//// authentication.verify(
+////   response:,
+////   challenge:,
+////   stored:,
+////   user: authentication.DiscoveredUser(account.user_handle),
+//// )
 //// ```
 
 import glasslock
@@ -80,6 +91,16 @@ pub type ResponseInfo {
     /// otherwise.
     user_handle: Option(BitArray),
   )
+}
+
+/// The account context for an authentication ceremony.
+pub type User {
+  /// The account was identified before the ceremony began. The response may
+  /// omit `userHandle`; when present, it must match this stored handle.
+  AlreadyIdentifiedUser(user_handle: BitArray)
+  /// The account was identified from a discoverable credential response. The
+  /// response must contain a `userHandle` matching this stored handle.
+  DiscoveredUser(user_handle: BitArray)
 }
 
 /// Errors that can occur during authentication verification.
@@ -421,16 +442,20 @@ pub fn response_info(response: Response) -> Result(ResponseInfo, Error) {
 ///
 /// Takes a parsed `Response` (from [`response_decoder`](#response_decoder) or
 /// [`parse_response_json`](#parse_response_json)), the challenge from
-/// `build()`, and the stored credential to verify against.
+/// [`build`](#build), the stored credential, and the stored handle of the
+/// account being authenticated.
 ///
-/// For discoverable flow: call [`response_info`](#response_info) first to get
-/// credential_id for lookup.
+/// For a discoverable flow, call [`response_info`](#response_info) first,
+/// resolve the account and credential from storage, then pass
+/// `DiscoveredUser(account.user_handle)`. Use `AlreadyIdentifiedUser` when the
+/// account was known before the ceremony began.
 ///
 /// Returns an updated credential with the new sign count on success.
 pub fn verify(
   response response: Response,
   challenge challenge: Challenge,
   stored stored: glasslock.Credential,
+  user user: User,
 ) -> Result(glasslock.Credential, Error) {
   let response = response.parsed
 
@@ -438,6 +463,11 @@ pub fn verify(
     decode_response_credential(response),
   )
   use _ <- result.try(check_credential_allowed(challenge, stored, raw_id))
+  use user_handle <- result.try(
+    internal.decode_optional_base64url(response.user_handle, "userHandle")
+    |> wrap_error,
+  )
+  use _ <- result.try(check_user_handle(user, user_handle))
 
   use client_data <- result.try(
     wrap_error(internal.parse_client_data(client_data_json)),
@@ -543,6 +573,31 @@ fn check_credential_allowed(
   Ok(Nil)
 }
 
+fn check_user_handle(
+  user: User,
+  returned_handle: Option(BitArray),
+) -> Result(Nil, Error) {
+  case user, returned_handle {
+    AlreadyIdentifiedUser(_), option.None -> Ok(Nil)
+    AlreadyIdentifiedUser(expected), option.Some(actual)
+    | DiscoveredUser(expected), option.Some(actual)
+    -> check_user_handle_match(expected, actual)
+    DiscoveredUser(_), option.None ->
+      Error(VerificationMismatch(glasslock.UserHandleField))
+  }
+}
+
+fn check_user_handle_match(
+  expected: BitArray,
+  actual: BitArray,
+) -> Result(Nil, Error) {
+  use <- bool.guard(
+    when: expected != actual,
+    return: Error(VerificationMismatch(glasslock.UserHandleField)),
+  )
+  Ok(Nil)
+}
+
 // Sign count 0 means the authenticator does not track signature counts. Accept
 // any new value when stored is 0. Reject when new drops to 0 but stored was
 // non-zero (possible cloned key).
@@ -565,9 +620,10 @@ pub fn verify_json(
   response_json response_json: String,
   challenge challenge: Challenge,
   stored stored: glasslock.Credential,
+  user user: User,
 ) -> Result(glasslock.Credential, Error) {
   use response <- result.try(parse_response_json(response_json))
-  verify(response:, challenge:, stored:)
+  verify(response:, challenge:, stored:, user:)
 }
 
 fn wrap_error(result: Result(a, internal.Error)) -> Result(a, Error) {

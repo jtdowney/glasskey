@@ -127,6 +127,7 @@ fn register_then_authenticate(
       response_json: testing.to_authentication_json(auth_response),
       challenge: auth_challenge,
       stored: credential,
+      user: authentication.AlreadyIdentifiedUser(user.id),
     )
   assert updated.sign_count == 1
 }
@@ -180,6 +181,7 @@ fn register_then_authenticate_with_glasskey_shape(
       ),
       challenge: auth_challenge,
       stored: credential,
+      user: authentication.AlreadyIdentifiedUser(user.id),
     )
   assert updated.sign_count == 1
 }

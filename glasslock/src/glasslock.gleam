@@ -150,4 +150,6 @@ pub type VerificationField {
   CredentialIdField
   /// The top-level credential `type` field was not `"public-key"`.
   CredentialTypeField
+  /// The assertion `userHandle` was missing or did not match the account.
+  UserHandleField
 }

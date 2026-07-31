@@ -276,10 +276,129 @@ pub fn verify_valid_authentication_test() {
       response_json:,
       challenge:,
       stored: stored_credential,
+      user: authentication.AlreadyIdentifiedUser(<<1, 2, 3, 4>>),
     )
   assert cred.id == stored_credential.id
   assert cred.sign_count == 1
   assert cred.public_key == stored_credential.public_key
+}
+
+pub fn verify_accepts_matching_handle_for_already_identified_user_test() {
+  let #(challenge, stored_credential, keypair) = setup_authentication()
+  let user_handle = <<1, 2, 3, 4>>
+  let response =
+    testing.build_authentication_response(
+      challenge:,
+      credential_id: stored_credential.id,
+      keypair:,
+      sign_count: 1,
+    )
+  let response_json =
+    testing.to_authentication_json(
+      testing.AuthenticationResponse(
+        ..response,
+        user_handle: option.Some(user_handle),
+      ),
+    )
+
+  let assert Ok(_) =
+    authentication.verify_json(
+      response_json:,
+      challenge:,
+      stored: stored_credential,
+      user: authentication.AlreadyIdentifiedUser(user_handle),
+    )
+}
+
+pub fn verify_rejects_mismatched_handle_for_already_identified_user_test() {
+  let #(challenge, stored_credential, keypair) = setup_authentication()
+  let response =
+    testing.build_authentication_response(
+      challenge:,
+      credential_id: stored_credential.id,
+      keypair:,
+      sign_count: 1,
+    )
+  let response_json =
+    testing.to_authentication_json(
+      testing.AuthenticationResponse(
+        ..response,
+        user_handle: option.Some(<<5, 6, 7, 8>>),
+      ),
+    )
+
+  let result =
+    authentication.verify_json(
+      response_json:,
+      challenge:,
+      stored: stored_credential,
+      user: authentication.AlreadyIdentifiedUser(<<1, 2, 3, 4>>),
+    )
+
+  assert result
+    == Error(authentication.VerificationMismatch(glasslock.UserHandleField))
+}
+
+pub fn verify_accepts_matching_handle_for_discovered_user_test() {
+  let #(challenge, stored_credential, keypair) =
+    setup_authentication_with(
+      AuthSetup(
+        ..default_auth_setup(),
+        allow_credentials_override: option.Some([]),
+      ),
+    )
+  let user_handle = <<1, 2, 3, 4>>
+  let response =
+    testing.build_authentication_response(
+      challenge:,
+      credential_id: stored_credential.id,
+      keypair:,
+      sign_count: 1,
+    )
+  let response_json =
+    testing.to_authentication_json(
+      testing.AuthenticationResponse(
+        ..response,
+        user_handle: option.Some(user_handle),
+      ),
+    )
+
+  let assert Ok(_) =
+    authentication.verify_json(
+      response_json:,
+      challenge:,
+      stored: stored_credential,
+      user: authentication.DiscoveredUser(user_handle),
+    )
+}
+
+pub fn verify_rejects_missing_handle_for_discovered_user_test() {
+  let #(challenge, stored_credential, keypair) =
+    setup_authentication_with(
+      AuthSetup(
+        ..default_auth_setup(),
+        allow_credentials_override: option.Some([]),
+      ),
+    )
+  let response =
+    testing.build_authentication_response(
+      challenge:,
+      credential_id: stored_credential.id,
+      keypair:,
+      sign_count: 1,
+    )
+  let response_json = testing.to_authentication_json(response)
+
+  let result =
+    authentication.verify_json(
+      response_json:,
+      challenge:,
+      stored: stored_credential,
+      user: authentication.DiscoveredUser(<<1, 2, 3, 4>>),
+    )
+
+  assert result
+    == Error(authentication.VerificationMismatch(glasslock.UserHandleField))
 }
 
 pub fn verify_via_decoded_pipeline_test() {
@@ -329,6 +448,7 @@ pub fn verify_valid_authentication_ed25519_test() {
       response_json:,
       challenge:,
       stored: stored_credential,
+      user: authentication.AlreadyIdentifiedUser(<<1, 2, 3, 4>>),
     )
   assert cred.sign_count == 1
 }
@@ -341,6 +461,7 @@ pub fn verify_rejects_invalid_json_test() {
       response_json: "{not valid json",
       challenge:,
       stored: stored_credential,
+      user: authentication.AlreadyIdentifiedUser(<<1, 2, 3, 4>>),
     )
 
   assert result
@@ -372,6 +493,7 @@ pub fn verify_rejects_wrong_type_test() {
       response_json:,
       challenge:,
       stored: stored_credential,
+      user: authentication.AlreadyIdentifiedUser(<<1, 2, 3, 4>>),
     )
   assert result
     == Error(authentication.VerificationMismatch(glasslock.TypeField))
@@ -400,6 +522,7 @@ pub fn verify_rejects_challenge_mismatch_test() {
       response_json:,
       challenge:,
       stored: stored_credential,
+      user: authentication.AlreadyIdentifiedUser(<<1, 2, 3, 4>>),
     )
   assert result
     == Error(authentication.VerificationMismatch(glasslock.ChallengeField))
@@ -428,6 +551,7 @@ pub fn verify_rejects_origin_mismatch_test() {
       response_json:,
       challenge:,
       stored: stored_credential,
+      user: authentication.AlreadyIdentifiedUser(<<1, 2, 3, 4>>),
     )
   assert result
     == Error(authentication.VerificationMismatch(glasslock.OriginField))
@@ -457,6 +581,7 @@ pub fn verify_rejects_credential_not_allowed_test() {
       response_json:,
       challenge:,
       stored: stored_credential,
+      user: authentication.AlreadyIdentifiedUser(<<1, 2, 3, 4>>),
     )
   assert result == Error(authentication.CredentialNotAllowed)
 }
@@ -485,6 +610,7 @@ pub fn verify_rejects_credential_id_mismatch_test() {
       response_json:,
       challenge:,
       stored: stored_credential,
+      user: authentication.AlreadyIdentifiedUser(<<1, 2, 3, 4>>),
     )
   assert result == Error(authentication.CredentialNotAllowed)
 }
@@ -510,6 +636,7 @@ pub fn verify_rejects_top_level_id_mismatched_with_raw_id_test() {
       response_json:,
       challenge:,
       stored: stored_credential,
+      user: authentication.AlreadyIdentifiedUser(<<1, 2, 3, 4>>),
     )
   assert result
     == Error(authentication.VerificationMismatch(glasslock.CredentialIdField))
@@ -535,6 +662,7 @@ pub fn verify_rejects_invalid_signature_test() {
       response_json:,
       challenge:,
       stored: stored_credential,
+      user: authentication.AlreadyIdentifiedUser(<<1, 2, 3, 4>>),
     )
   assert result == Error(authentication.InvalidSignature)
 }
@@ -559,6 +687,7 @@ pub fn verify_rejects_sign_count_regression_test() {
       response_json:,
       challenge:,
       stored: stored_credential,
+      user: authentication.AlreadyIdentifiedUser(<<1, 2, 3, 4>>),
     )
   assert result == Error(authentication.SignCountRegression)
 }
@@ -583,6 +712,7 @@ pub fn verify_rejects_sign_count_reset_to_zero_test() {
       response_json:,
       challenge:,
       stored: stored_credential,
+      user: authentication.AlreadyIdentifiedUser(<<1, 2, 3, 4>>),
     )
   assert result == Error(authentication.SignCountRegression)
 }
@@ -613,6 +743,7 @@ pub fn verify_rejects_when_verification_required_but_not_performed_test() {
       response_json:,
       challenge:,
       stored: stored_credential,
+      user: authentication.AlreadyIdentifiedUser(<<1, 2, 3, 4>>),
     )
   assert result == Error(authentication.UserVerificationFailed)
 }
@@ -640,6 +771,7 @@ pub fn verify_succeeds_when_verification_required_and_performed_test() {
       response_json:,
       challenge:,
       stored: stored_credential,
+      user: authentication.AlreadyIdentifiedUser(<<1, 2, 3, 4>>),
     )
   assert cred.sign_count == 1
 }
@@ -664,6 +796,7 @@ pub fn verify_rejects_user_presence_not_asserted_test() {
       response_json:,
       challenge:,
       stored: stored_credential,
+      user: authentication.AlreadyIdentifiedUser(<<1, 2, 3, 4>>),
     )
   assert result == Error(authentication.UserPresenceFailed)
 }
@@ -702,6 +835,7 @@ pub fn verify_rejects_rp_id_mismatch_test() {
       response_json:,
       challenge:,
       stored: stored_credential,
+      user: authentication.AlreadyIdentifiedUser(<<1, 2, 3, 4>>),
     )
   assert result
     == Error(authentication.VerificationMismatch(glasslock.RelyingPartyIdField))
@@ -743,6 +877,7 @@ pub fn verify_rejects_at_flag_in_authentication_test() {
       response_json:,
       challenge:,
       stored: stored_credential,
+      user: authentication.AlreadyIdentifiedUser(<<1, 2, 3, 4>>),
     )
   assert result
     == Error(authentication.ParseError(
@@ -773,6 +908,7 @@ pub fn verify_rejects_cross_origin_when_disabled_test() {
       response_json:,
       challenge:,
       stored: stored_credential,
+      user: authentication.AlreadyIdentifiedUser(<<1, 2, 3, 4>>),
     )
   assert result
     == Error(authentication.VerificationMismatch(glasslock.CrossOriginField))
@@ -804,6 +940,7 @@ pub fn verify_succeeds_with_cross_origin_allowed_test() {
       response_json:,
       challenge:,
       stored: stored_credential,
+      user: authentication.AlreadyIdentifiedUser(<<1, 2, 3, 4>>),
     )
   assert cred.sign_count == 1
 }
@@ -840,6 +977,7 @@ pub fn verify_accepts_allowed_top_origin_test() {
       response_json:,
       challenge:,
       stored: stored_credential,
+      user: authentication.AlreadyIdentifiedUser(<<1, 2, 3, 4>>),
     )
   assert cred.sign_count == 1
 }
@@ -876,6 +1014,7 @@ pub fn verify_rejects_unknown_top_origin_test() {
       response_json:,
       challenge:,
       stored: stored_credential,
+      user: authentication.AlreadyIdentifiedUser(<<1, 2, 3, 4>>),
     )
   assert result
     == Error(authentication.VerificationMismatch(glasslock.TopOriginField))
@@ -913,6 +1052,7 @@ pub fn verify_accepts_missing_top_origin_with_allowlist_test() {
       response_json:,
       challenge:,
       stored: stored_credential,
+      user: authentication.AlreadyIdentifiedUser(<<1, 2, 3, 4>>),
     )
   assert cred.sign_count == 1
 }
@@ -942,6 +1082,7 @@ pub fn verify_rejects_top_origin_without_cross_origin_test() {
       response_json:,
       challenge:,
       stored: stored_credential,
+      user: authentication.AlreadyIdentifiedUser(<<1, 2, 3, 4>>),
     )
   assert result
     == Error(authentication.VerificationMismatch(glasslock.TopOriginField))
@@ -964,6 +1105,7 @@ pub fn verify_sign_count_zero_stored_allows_any_new_test() {
       response_json:,
       challenge:,
       stored: stored_credential,
+      user: authentication.AlreadyIdentifiedUser(<<1, 2, 3, 4>>),
     )
   assert cred.sign_count == 999_999
 }
@@ -985,6 +1127,7 @@ pub fn verify_both_sign_counts_zero_succeeds_test() {
       response_json:,
       challenge:,
       stored: stored_credential,
+      user: authentication.AlreadyIdentifiedUser(<<1, 2, 3, 4>>),
     )
   assert cred.sign_count == 0
 }
@@ -1012,6 +1155,7 @@ pub fn verify_rejects_invalid_credential_type_test() {
       response_json:,
       challenge:,
       stored: stored_credential,
+      user: authentication.AlreadyIdentifiedUser(<<1, 2, 3, 4>>),
     )
   assert result
     == Error(authentication.VerificationMismatch(glasslock.CredentialTypeField))
@@ -1035,9 +1179,10 @@ pub fn verify_discoverable_flow_test() {
     )
   let response_json =
     testing.to_authentication_json(
-      response,
-      credential_id: stored_credential.id,
-      user_handle: option.None,
+      testing.AuthenticationResponse(
+        ..response,
+        user_handle: option.Some(<<1, 2, 3, 4>>),
+      ),
     )
 
   let assert Ok(response) = authentication.parse_response_json(response_json)
@@ -1045,7 +1190,12 @@ pub fn verify_discoverable_flow_test() {
   assert info.credential_id == stored_credential.id
 
   let assert Ok(cred) =
-    authentication.verify(response:, challenge:, stored: stored_credential)
+    authentication.verify(
+      response:,
+      challenge:,
+      stored: stored_credential,
+      user: authentication.DiscoveredUser(<<1, 2, 3, 4>>),
+    )
   assert cred.sign_count == 1
 }
 
@@ -1171,6 +1321,7 @@ pub fn sign_count_monotonicity_test() {
       response_json: response_json,
       challenge: challenge,
       stored: stored_cred,
+      user: authentication.AlreadyIdentifiedUser(<<1, 2, 3, 4>>),
     )
 
   case new > stored {
@@ -1290,6 +1441,7 @@ pub fn decoded_challenge_drives_verify_test() {
       response_json:,
       challenge: decoded,
       stored: stored_credential,
+      user: authentication.AlreadyIdentifiedUser(<<1, 2, 3, 4>>),
     )
 }
 

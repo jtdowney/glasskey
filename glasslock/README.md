@@ -47,12 +47,15 @@ case registration.verify_json(response_json:, challenge:) {
 ```gleam
 import glasslock/authentication
 
-// 1. Generate options to send to the browser
-// (no allow_credential calls = discoverable/passkey flow)
+// 1. Generate options after identifying the account
 let #(options_json, challenge) =
   authentication.new(
     relying_party_id: "example.com",
     origin: "https://example.com",
+  )
+  |> authentication.allow_credential(
+    id: stored_credential.id,
+    transports: stored_credential.transports,
   )
   |> authentication.build()
 // Send options_json to the browser. On a single node, keep `challenge`
@@ -61,7 +64,12 @@ let #(options_json, challenge) =
 // (returns a JSON string) and hydrate with `authentication.parse_challenge`.
 
 // 2. Verify the browser's response
-case authentication.verify_json(response_json:, challenge:, stored: stored_credential) {
+case authentication.verify_json(
+  response_json:,
+  challenge:,
+  stored: stored_credential,
+  user: authentication.AlreadyIdentifiedUser(account.user_handle),
+) {
   Ok(updated_credential) -> {
     // Update the stored sign_count to detect cloned authenticators
     Ok(updated_credential)
@@ -72,14 +80,19 @@ case authentication.verify_json(response_json:, challenge:, stored: stored_crede
 
 ### Discoverable Credentials (Passkeys)
 
-For discoverable credentials where the user doesn't provide a username upfront, parse the response with `parse_response_json`, extract lookup info with `response_info`, then verify the parsed `Response`:
+For discoverable credentials where the user doesn't provide a username upfront, parse the response with `parse_response_json`, extract lookup info with `response_info`, resolve the owning account and credential from storage, then verify the parsed `Response`. Treat both response fields as untrusted until verification succeeds:
 
 ```gleam
 use response <- result.try(authentication.parse_response_json(response_json))
 use info <- result.try(authentication.response_info(response))
-// Look up stored credential by info.credential_id or info.user_handle
-use stored <- result.try(lookup_credential(info.credential_id))
-authentication.verify(response:, challenge:, stored:)
+use account <- result.try(lookup_account_by_credential_id(info.credential_id))
+use stored <- result.try(find_credential(account, info.credential_id))
+authentication.verify(
+  response:,
+  challenge:,
+  stored:,
+  user: authentication.DiscoveredUser(account.user_handle),
+)
 ```
 
 ## Storing Credentials
