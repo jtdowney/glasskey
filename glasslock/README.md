@@ -19,81 +19,7 @@ gleam add glasslock
 
 Both builders return `#(options_json, challenge)`. Send `options_json` to the browser and retain `challenge` until the response arrives. Keep the challenge in memory on one node. To move it between processes or nodes, use the module's `encode_challenge` and `parse_challenge` functions.
 
-// 1. Generate options to send to the browser
-let #(options_json, challenge) =
-  registration.new(
-    relying_party: registration.RelyingParty(id: "example.com", name: "My App"),
-    user: registration.User(id: user_id, name: username, display_name: username),
-    origin: "https://example.com",
-  )
-  |> registration.build()
-// Send options_json to the browser. On a single node, keep `challenge`
-// in memory (e.g. an actor keyed by session id). For multi-node or
-// signed-cookie storage, serialize with `registration.encode_challenge`
-// (returns a JSON string) and hydrate with `registration.parse_challenge`.
-
-// 2. Verify the browser's response
-case registration.verify_json(response_json:, challenge:) {
-  Ok(credential) -> {
-    // Store credential.id, credential.public_key, and credential.sign_count
-    Ok(credential)
-  }
-  Error(e) -> Error(e)
-}
-```
-
-### Authentication
-
-```gleam
-import glasslock/authentication
-
-// 1. Generate options after identifying the account
-let #(options_json, challenge) =
-  authentication.new(
-    relying_party_id: "example.com",
-    origin: "https://example.com",
-  )
-  |> authentication.allow_credential(
-    id: stored_credential.id,
-    transports: stored_credential.transports,
-  )
-  |> authentication.build()
-// Send options_json to the browser. On a single node, keep `challenge`
-// in memory (e.g. an actor keyed by session id). For multi-node or
-// signed-cookie storage, serialize with `authentication.encode_challenge`
-// (returns a JSON string) and hydrate with `authentication.parse_challenge`.
-
-// 2. Verify the browser's response
-case authentication.verify_json(
-  response_json:,
-  challenge:,
-  stored: stored_credential,
-  user: authentication.AlreadyIdentifiedUser(account.user_handle),
-) {
-  Ok(updated_credential) -> {
-    // Update the stored sign_count to detect cloned authenticators
-    Ok(updated_credential)
-  }
-  Error(e) -> Error(e)
-}
-```
-
-### Discoverable Credentials (Passkeys)
-
-For discoverable credentials where the user doesn't provide a username upfront, parse the response with `parse_response_json`, extract lookup info with `response_info`, resolve the owning account and credential from storage, then verify the parsed `Response`. Treat both response fields as untrusted until verification succeeds:
-
-```gleam
-use response <- result.try(authentication.parse_response_json(response_json))
-use info <- result.try(authentication.response_info(response))
-use account <- result.try(lookup_account_by_credential_id(info.credential_id))
-use stored <- result.try(find_credential(account, info.credential_id))
-authentication.verify(
-  response:,
-  challenge:,
-  stored:,
-  user: authentication.DiscoveredUser(account.user_handle),
-)
-```
+After registration, insert the returned credential only if its ID is unassigned. After authentication, persist the returned `sign_count`. For discoverable credentials, use `parse_response_json` and `response_info` to load the account and stored credential, then pass the same parsed response to `verify`.
 
 ## Storing Credentials
 
@@ -106,8 +32,6 @@ Each user can register multiple passkeys. After registration, store per passkey:
 | `sign_count`    | `credential.sign_count`. Update after each authentication.                                                                                       |
 | `transports`    | `credential.transports`. Pass back to `registration.exclude_credential` and `authentication.allow_credential` so the browser can route requests. |
 
-## Features
-
-- ES256, Ed25519, and RS256 signatures
-- Discoverable (passkey) and non-discoverable credentials
-- Sign-count verification for cloned-authenticator detection
+The credential ID must be unique across every account for the RP. Enforce this
+with a database uniqueness constraint: `UNIQUE (credential_id)` for one RP, or
+`UNIQUE (rp_id, credential_id)` when a database serves several RPs.
