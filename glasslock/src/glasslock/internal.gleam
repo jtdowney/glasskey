@@ -233,24 +233,28 @@ fn parse_authenticator_header(
       flags_byte:8,
       sign_count:32-big-unsigned,
       rest:bytes,
-    >> ->
-      Ok(AuthenticatorHeader(
-        rp_id_hash:,
-        flags: parse_flags(flags_byte),
-        sign_count:,
-        rest:,
-      ))
+    >> -> {
+      use flags <- result.try(parse_flags(flags_byte))
+      Ok(AuthenticatorHeader(rp_id_hash:, flags:, sign_count:, rest:))
+    }
     _ -> Error(ParseError("Authenticator data too short"))
   }
 }
 
-fn parse_flags(flags_byte: Int) -> AuthenticatorFlags {
-  AuthenticatorFlags(
+fn parse_flags(flags_byte: Int) -> Result(AuthenticatorFlags, Error) {
+  let backup_eligible = int.bitwise_and(flags_byte, 0x08) != 0
+  let backup_state = int.bitwise_and(flags_byte, 0x10) != 0
+  use <- bool.guard(
+    when: backup_state && !backup_eligible,
+    return: Error(ParseError("Backup state set without backup eligibility")),
+  )
+
+  Ok(AuthenticatorFlags(
     user_present: int.bitwise_and(flags_byte, 0x01) != 0,
     user_verified: int.bitwise_and(flags_byte, 0x04) != 0,
     has_attested_credential: int.bitwise_and(flags_byte, 0x40) != 0,
     has_extensions: int.bitwise_and(flags_byte, 0x80) != 0,
-  )
+  ))
 }
 
 fn split_cose_key(

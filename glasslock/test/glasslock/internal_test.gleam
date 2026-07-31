@@ -11,6 +11,11 @@ import kryptos/crypto
 import kryptos/hash
 import qcheck
 
+fn with_authenticator_flags(data: BitArray, flags_byte: Int) -> BitArray {
+  let assert <<rp_id_hash:bytes-size(32), _old_flags:8, rest:bytes>> = data
+  <<rp_id_hash:bits, flags_byte, rest:bits>>
+}
+
 pub fn sign_verify_round_trip_test() {
   let generators = [
     testing.generate_es256_keypair,
@@ -88,6 +93,52 @@ pub fn parse_authentication_auth_data_valid_test() {
   assert ad.user_present
   assert !ad.user_verified
   assert ad.sign_count == 42
+}
+
+pub fn parse_authentication_auth_data_validates_backup_flags_test() {
+  let auth_data =
+    testing.build_authentication_authenticator_data(
+      relying_party_id: "example.com",
+      flags: testing.default_flags,
+      sign_count: 0,
+    )
+
+  list.each([0x01, 0x09, 0x19], fn(flags_byte) {
+    let assert Ok(_) =
+      auth_data
+      |> with_authenticator_flags(flags_byte)
+      |> internal.parse_authentication_auth_data
+    Nil
+  })
+
+  assert auth_data
+    |> with_authenticator_flags(0x11)
+    |> internal.parse_authentication_auth_data
+    == Error(internal.ParseError("Backup state set without backup eligibility"))
+}
+
+pub fn parse_registration_auth_data_validates_backup_flags_test() {
+  let auth_data =
+    testing.build_registration_authenticator_data(
+      relying_party_id: "example.com",
+      credential_id: <<1, 2, 3, 4>>,
+      cose_key_cbor: testing.generate_es256_keypair() |> testing.cose_key,
+      flags: testing.default_flags,
+      sign_count: 0,
+    )
+
+  list.each([0x41, 0x49, 0x59], fn(flags_byte) {
+    let assert Ok(_) =
+      auth_data
+      |> with_authenticator_flags(flags_byte)
+      |> internal.parse_registration_auth_data
+    Nil
+  })
+
+  assert auth_data
+    |> with_authenticator_flags(0x51)
+    |> internal.parse_registration_auth_data
+    == Error(internal.ParseError("Backup state set without backup eligibility"))
 }
 
 pub fn parse_registration_auth_data_missing_credential_test() {
