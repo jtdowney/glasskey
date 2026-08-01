@@ -36,7 +36,7 @@ import gleam/javascript/promise
 use result <- promise.await(glasskey.start_registration(options))
 case result {
   Ok(response_json) -> todo as "POST response_json to server for verification"
-  Error(glasskey.NotSupported) -> todo as "WebAuthn not available"
+  Error(glasskey.NotSupported) -> todo as "WebAuthn or requested constraints not supported"
   Error(glasskey.NotAllowed) -> todo as "user cancelled"
   Error(e) -> todo as "other error"
 }
@@ -93,7 +93,7 @@ use available <- promise.await(glasskey.supports_webauthn_autofill())
 
 | Error               | Meaning                                                            |
 | ------------------- | ------------------------------------------------------------------ |
-| `NotSupported`      | WebAuthn not available in this browser                             |
+| `NotSupported`      | WebAuthn unavailable or requested constraints unsupported          |
 | `NotAllowed`        | User cancelled or timed out                                        |
 | `Aborted`           | Operation was aborted                                              |
 | `SecurityError`     | Security policy violation (e.g., non-HTTPS origin)                 |
