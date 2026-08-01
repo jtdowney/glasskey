@@ -34,6 +34,7 @@ pub type AuthenticationCredential {
     authenticator_data: BitArray,
     signature: BitArray,
     user_handle: Option(BitArray),
+    client_extension_results: Json,
   )
 }
 
@@ -151,6 +152,7 @@ pub type RegistrationCredential {
     client_data_json: BitArray,
     attestation_object: BitArray,
     transports: List(String),
+    client_extension_results: Json,
   )
 }
 
@@ -328,6 +330,7 @@ fn encode_authentication_response(
     #("rawId", base64url_json(credential.raw_id)),
     #("type", json.string("public-key")),
     #("response", json.object(response_fields)),
+    #("clientExtensionResults", credential.client_extension_results),
   ])
 }
 
@@ -349,6 +352,7 @@ fn encode_registration_response(credential: RegistrationCredential) -> Json {
     #("rawId", base64url_json(credential.raw_id)),
     #("type", json.string("public-key")),
     #("response", json.object(response_fields)),
+    #("clientExtensionResults", credential.client_extension_results),
   ])
 }
 

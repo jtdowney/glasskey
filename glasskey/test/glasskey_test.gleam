@@ -823,15 +823,47 @@ pub fn start_registration_succeeds_with_credential_test() {
       ["response", "attestationObject"],
       decode.string,
     )
-    decode.success(#(id, type_, raw_id, client_data_json, attestation_object))
+    use resident_key <- decode.subfield(
+      ["clientExtensionResults", "credProps", "rk"],
+      decode.bool,
+    )
+    use first <- decode.subfield(
+      ["clientExtensionResults", "prf", "results", "first"],
+      decode.string,
+    )
+    use second <- decode.subfield(
+      ["clientExtensionResults", "prf", "results", "second"],
+      decode.string,
+    )
+    decode.success(#(
+      id,
+      type_,
+      raw_id,
+      client_data_json,
+      attestation_object,
+      resident_key,
+      first,
+      second,
+    ))
   }
-  let assert Ok(#(id, type_, raw_id, client_data_json, attestation_object)) =
-    json.parse(json_string, decoder)
+  let assert Ok(#(
+    id,
+    type_,
+    raw_id,
+    client_data_json,
+    attestation_object,
+    resident_key,
+    first,
+    second,
+  )) = json.parse(json_string, decoder)
   assert id == "fixture-cred-id"
   assert type_ == "public-key"
   assert raw_id == "AQID"
   assert client_data_json == "e30"
   assert attestation_object == "BwgJ"
+  assert resident_key
+  assert first == "-_8"
+  assert second == "AQID"
 
   promise.resolve(Nil)
 }
@@ -1131,6 +1163,18 @@ pub fn start_authentication_succeeds_with_user_handle_test() {
       ["response", "userHandle"],
       decode.optional(decode.string),
     )
+    use resident_key <- decode.subfield(
+      ["clientExtensionResults", "credProps", "rk"],
+      decode.bool,
+    )
+    use first <- decode.subfield(
+      ["clientExtensionResults", "prf", "results", "first"],
+      decode.string,
+    )
+    use second <- decode.subfield(
+      ["clientExtensionResults", "prf", "results", "second"],
+      decode.string,
+    )
     decode.success(#(
       id,
       type_,
@@ -1138,16 +1182,31 @@ pub fn start_authentication_succeeds_with_user_handle_test() {
       authenticator_data,
       signature,
       user_handle,
+      resident_key,
+      first,
+      second,
     ))
   }
-  let assert Ok(#(id, type_, raw_id, authenticator_data, signature, user_handle)) =
-    json.parse(json_string, decoder)
+  let assert Ok(#(
+    id,
+    type_,
+    raw_id,
+    authenticator_data,
+    signature,
+    user_handle,
+    resident_key,
+    first,
+    second,
+  )) = json.parse(json_string, decoder)
   assert id == "fixture-assert-id"
   assert type_ == "public-key"
   assert raw_id == "ChQe"
   assert authenticator_data == "RlBa"
   assert signature == "ZG54"
   assert user_handle == option.Some("AQI")
+  assert resident_key
+  assert first == "-_8"
+  assert second == "AQID"
 
   promise.resolve(Nil)
 }

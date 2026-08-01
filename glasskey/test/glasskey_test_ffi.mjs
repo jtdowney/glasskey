@@ -203,6 +203,7 @@ export function setCreateCredentialWithTransports(
         attestationObject: attestationObject.rawBuffer.buffer,
         getTransports: () => [...transportArray],
       },
+      getClientExtensionResults: binaryExtensionResults,
     },
   };
 }
@@ -247,6 +248,7 @@ export function setGetCredential(
       id: "fixture-assert-id",
       rawId: rawId.rawBuffer.buffer,
       response,
+      getClientExtensionResults: binaryExtensionResults,
     },
   };
 }

@@ -219,6 +219,7 @@ function buildRegistrationCredential(credential) {
     toBitArray(response.clientDataJSON),
     toBitArray(response.attestationObject),
     toList(transports),
+    extensionResultsToJson(credential.getClientExtensionResults()),
   );
 }
 
@@ -235,6 +236,7 @@ function buildAuthenticationCredential(credential) {
     toBitArray(response.authenticatorData),
     toBitArray(response.signature),
     userHandle,
+    extensionResultsToJson(credential.getClientExtensionResults()),
   );
 }
 
