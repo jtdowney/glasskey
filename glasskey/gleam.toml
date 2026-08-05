@@ -1,5 +1,5 @@
 name = "glasskey"
-version = "1.0.0"
+version = "1.0.0-rc1"
 target = "javascript"
 description = "Browser bindings for WebAuthn/FIDO2/Passkey credentials"
 licences = ["Apache-2.0"]

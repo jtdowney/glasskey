@@ -15,7 +15,7 @@ gleam add glasskey
 
 ## Usage
 
-`registration_options_decoder()` and `authentication_options_decoder()` are decoder that parse the options JSON glasslock produces. Compose them into whatever shape your server wraps them in, then pass the decoded value to the matching ceremony starter:
+`registration_options_decoder()` and `authentication_options_decoder()` are decoders that parse the options JSON glasslock produces. Compose them into whatever shape your server wraps them in, then pass the decoded value to the matching ceremony starter:
 
 ```gleam
 import gleam/json
