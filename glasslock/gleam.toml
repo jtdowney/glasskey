@@ -1,5 +1,5 @@
 name = "glasslock"
-version = "1.0.0"
+version = "1.0.0-rc1"
 description = "Gleam server-side verification of WebAuthn/FIDO2/Passkey credentials"
 licences = ["Apache-2.0"]
 repository = { type = "github", user = "jtdowney", repo = "glasskey", path = "glasslock" }
