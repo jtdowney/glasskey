@@ -9,6 +9,7 @@ import gleam/list
 import gleam/result
 import gleam/string
 import non_empty_list
+import snag.{type Result}
 import wisp
 
 const session_cookie = "registration"
@@ -117,42 +118,38 @@ fn complete_registration(
   let result = {
     use raw <- result.try(
       wisp.get_cookie(req, session_cookie, wisp.Signed)
-      |> result.replace_error(#("session not found", 400)),
+      |> snag.replace_error("session not found"),
     )
-    use session <- result.try(
-      decode_pending(raw)
-      |> result.replace_error(#("session not found", 400)),
-    )
+    use session <- result.try(decode_pending(raw))
     use credential <- result.try(
       registration.verify(response:, challenge: session.challenge)
-      |> result.replace_error(#("verification failed", 400)),
+      |> snag.replace_error("verification failed"),
     )
-    credentials.save(
-      ctx.credentials,
-      session.username,
-      session.user_id,
-      credential,
-    )
-    |> result.map_error(save_error_response)
+    Ok(#(session, credential))
   }
 
   case result {
-    Ok(_) ->
-      json.object([#("verified", json.bool(True))])
-      |> json.to_string
-      |> wisp.json_response(200)
+    Error(error) ->
+      web.error_response(snag.line_print(error), 400)
       |> web.clear_session(req, session_cookie)
-    Error(#(message, status)) ->
-      web.error_response(message, status)
-      |> web.clear_session(req, session_cookie)
-  }
-}
-
-fn save_error_response(error: credentials.SaveError) -> #(String, Int) {
-  case error {
-    credentials.UsernameTaken -> #("username already registered", 409)
-    credentials.CredentialIdTaken -> #("credential already registered", 409)
-    credentials.UserIdTaken -> #("user id already registered", 409)
+    Ok(#(session, credential)) ->
+      case
+        credentials.save(
+          ctx.credentials,
+          session.username,
+          session.user_id,
+          credential,
+        )
+      {
+        Ok(_) ->
+          json.object([#("verified", json.bool(True))])
+          |> json.to_string
+          |> wisp.json_response(200)
+          |> web.clear_session(req, session_cookie)
+        Error(error) ->
+          web.error_response(snag.line_print(error), 409)
+          |> web.clear_session(req, session_cookie)
+      }
   }
 }
 
@@ -171,7 +168,7 @@ fn encode_pending(pending: PendingRegistration) -> String {
   |> json.to_string
 }
 
-fn decode_pending(raw: String) -> Result(PendingRegistration, Nil) {
+fn decode_pending(raw: String) -> Result(PendingRegistration) {
   let decoder = {
     use username <- decode.field("username", decode.string)
     use user_id_b64 <- decode.field("user_id", decode.string)
@@ -181,12 +178,15 @@ fn decode_pending(raw: String) -> Result(PendingRegistration, Nil) {
 
   use #(username, user_id_b64, challenge_encoded) <- result.try(
     json.parse(raw, decoder)
-    |> result.replace_error(Nil),
+    |> snag.replace_error("invalid session"),
   )
-  use user_id <- result.try(bit_array.base64_url_decode(user_id_b64))
+  use user_id <- result.try(
+    bit_array.base64_url_decode(user_id_b64)
+    |> snag.replace_error("invalid session"),
+  )
   use challenge <- result.try(
     registration.parse_challenge(challenge_encoded)
-    |> result.replace_error(Nil),
+    |> snag.replace_error("invalid session"),
   )
   Ok(PendingRegistration(username:, user_id:, challenge:))
 }

@@ -8,6 +8,7 @@ import gleam/json
 import gleam/list
 import gleam/option
 import gleam/result
+import snag.{type Result}
 import storail
 
 fn user_to_json(user: User) -> json.Json {
@@ -47,19 +48,19 @@ fn user_decoder() -> decode.Decoder(User) {
   )
   case result.all(credentials) {
     Ok(credentials) -> decode.success(User(username:, user_id:, credentials:))
-    Error(Nil) ->
+    Error(_) ->
       decode.failure(User(username: "", user_id: <<>>, credentials: []), "User")
   }
 }
 
-fn credential_decoder() -> decode.Decoder(Result(glasslock.Credential, Nil)) {
+fn credential_decoder() -> decode.Decoder(Result(glasslock.Credential)) {
   use id <- decode.field("id", base64_decoder())
   use public_key_bytes <- decode.field("public_key_bytes", base64_decoder())
   use sign_count <- decode.field("sign_count", decode.int)
   use transports <- decode.field("transports", decode.list(transport_decoder()))
   decode.success(
     glasslock.parse_public_key(public_key_bytes)
-    |> result.replace_error(Nil)
+    |> snag.replace_error("invalid public key")
     |> result.map(fn(public_key) {
       glasslock.Credential(id:, public_key:, sign_count:, transports:)
     }),
@@ -78,7 +79,7 @@ fn transport_decoder() -> decode.Decoder(glasslock.Transport) {
   use text <- decode.then(decode.string)
   case transport_from_string(text) {
     Ok(transport) -> decode.success(transport)
-    Error(Nil) -> decode.failure(glasslock.TransportInternal, "Transport")
+    Error(_) -> decode.failure(glasslock.TransportInternal, "Transport")
   }
 }
 
@@ -93,7 +94,7 @@ fn transport_to_string(transport: glasslock.Transport) -> String {
   }
 }
 
-fn transport_from_string(value: String) -> Result(glasslock.Transport, Nil) {
+fn transport_from_string(value: String) -> Result(glasslock.Transport) {
   case value {
     "usb" -> Ok(glasslock.TransportUsb)
     "nfc" -> Ok(glasslock.TransportNfc)
@@ -101,7 +102,7 @@ fn transport_from_string(value: String) -> Result(glasslock.Transport, Nil) {
     "smart-card" -> Ok(glasslock.TransportSmartCard)
     "hybrid" -> Ok(glasslock.TransportHybrid)
     "internal" -> Ok(glasslock.TransportInternal)
-    _ -> Error(Nil)
+    _ -> snag.error("invalid transport")
   }
 }
 
@@ -153,39 +154,30 @@ fn user_key(username: String) -> String {
   |> bit_array.base64_url_encode(False)
 }
 
-pub fn get_user(store: Store, username: String) -> Result(User, Nil) {
+pub fn get_user(store: Store, username: String) -> Result(User) {
   storail.read(storail.key(store.users, user_key(username)))
-  |> result.replace_error(Nil)
+  |> snag.replace_error("user not found")
 }
 
 pub fn get_user_by_credential_id(
   store: Store,
   credential_id: BitArray,
-) -> Result(User, Nil) {
+) -> Result(User) {
   storail.read(storail.key(
     store.credential_index,
     bit_array.base64_url_encode(credential_id, False),
   ))
-  |> result.replace_error(Nil)
+  |> snag.replace_error("credential not found")
   |> result.try(get_user(store, _))
 }
 
-pub fn get_user_by_user_id(
-  store: Store,
-  user_id: BitArray,
-) -> Result(User, Nil) {
+pub fn get_user_by_user_id(store: Store, user_id: BitArray) -> Result(User) {
   storail.read(storail.key(
     store.user_id_index,
     bit_array.base64_url_encode(user_id, False),
   ))
-  |> result.replace_error(Nil)
+  |> snag.replace_error("user id not found")
   |> result.try(get_user(store, _))
-}
-
-pub type SaveError {
-  UsernameTaken
-  CredentialIdTaken
-  UserIdTaken
 }
 
 pub fn save(
@@ -193,21 +185,21 @@ pub fn save(
   username: String,
   user_id: BitArray,
   credential: glasslock.Credential,
-) -> Result(Nil, SaveError) {
+) -> Result(Nil) {
   let cred_key = bit_array.base64_url_encode(credential.id, False)
   let uid_key = bit_array.base64_url_encode(user_id, False)
 
   use <- bool.guard(
     exists(storail.key(store.users, user_key(username))),
-    Error(UsernameTaken),
+    snag.error("username already registered"),
   )
   use <- bool.guard(
     exists(storail.key(store.credential_index, cred_key)),
-    Error(CredentialIdTaken),
+    snag.error("credential already registered"),
   )
   use <- bool.guard(
     exists(storail.key(store.user_id_index, uid_key)),
-    Error(UserIdTaken),
+    snag.error("user id already registered"),
   )
 
   let user = User(username:, user_id:, credentials: [credential])

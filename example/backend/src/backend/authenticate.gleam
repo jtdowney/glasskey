@@ -9,6 +9,7 @@ import gleam/option
 import gleam/result
 import gleam/string
 import non_empty_list
+import snag.{type Result}
 import wisp
 
 const session_cookie = "authentication"
@@ -98,7 +99,7 @@ fn begin_for_username(
 fn authentication_context_for_username(
   ctx: web.Context,
   username: option.Option(String),
-) -> Result(#(List(#(BitArray, List(glasslock.Transport))), Bool), Nil) {
+) -> Result(#(List(#(BitArray, List(glasslock.Transport))), Bool)) {
   case option.map(username, string.trim) {
     option.None -> Ok(#([], False))
     option.Some("") -> Ok(#([], False))
@@ -135,7 +136,7 @@ fn complete_authentication(
   let result = {
     use encoded <- result.try(
       wisp.get_cookie(req, session_cookie, wisp.Signed)
-      |> result.replace_error(#("session not found", 400)),
+      |> snag.replace_error("session not found"),
     )
     let session_decoder = {
       use challenge <- decode.field("challenge", decode.string)
@@ -144,25 +145,23 @@ fn complete_authentication(
     }
     use #(encoded_challenge, already_identified) <- result.try(
       json.parse(encoded, session_decoder)
-      |> result.replace_error(#("session not found", 400)),
+      |> snag.replace_error("session not found"),
     )
     use challenge <- result.try(
       authentication.parse_challenge(encoded_challenge)
-      |> result.replace_error(#("session not found", 400)),
+      |> snag.replace_error("session not found"),
     )
     use info <- result.try(
       authentication.response_info(response)
-      |> result.map_error(fn(err) {
-        #("invalid response: " <> describe_error(err), 400)
-      }),
+      |> snag.map_error(fn(err) { "invalid response: " <> describe_error(err) }),
     )
     use user <- result.try(
       lookup_user(ctx, info)
-      |> result.replace_error(#("user not found", 400)),
+      |> snag.replace_error("user not found"),
     )
     use stored_credential <- result.try(
       list.find(user.credentials, fn(cred) { cred.id == info.credential_id })
-      |> result.replace_error(#("credential not found", 400)),
+      |> snag.replace_error("credential not found"),
     )
     let authentication_user = case already_identified {
       True -> authentication.AlreadyIdentifiedUser(user.user_id)
@@ -175,8 +174,8 @@ fn complete_authentication(
         stored: stored_credential,
         user: authentication_user,
       )
-      |> result.map_error(fn(err) {
-        #("verification failed: " <> describe_error(err), 400)
+      |> snag.map_error(fn(err) {
+        "verification failed: " <> describe_error(err)
       }),
     )
     credentials.update(ctx.credentials, user, updated_credential)
@@ -192,8 +191,8 @@ fn complete_authentication(
       |> json.to_string
       |> wisp.json_response(200)
       |> web.clear_session(req, session_cookie)
-    Error(#(message, status)) ->
-      web.error_response(message, status)
+    Error(error) ->
+      web.error_response(snag.line_print(error), 400)
       |> web.clear_session(req, session_cookie)
   }
 }
@@ -228,7 +227,7 @@ fn describe_field(field: glasslock.VerificationField) -> String {
 fn lookup_user(
   ctx: web.Context,
   info: authentication.ResponseInfo,
-) -> Result(credentials.User, Nil) {
+) -> Result(credentials.User) {
   case
     credentials.get_user_by_credential_id(ctx.credentials, info.credential_id)
   {
@@ -237,7 +236,7 @@ fn lookup_user(
       case info.user_handle {
         option.Some(user_handle) ->
           credentials.get_user_by_user_id(ctx.credentials, user_handle)
-        option.None -> Error(Nil)
+        option.None -> snag.error("user not found")
       }
   }
 }

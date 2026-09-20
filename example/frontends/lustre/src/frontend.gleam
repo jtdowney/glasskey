@@ -12,6 +12,7 @@ import lustre/element.{type Element}
 import lustre/element/html
 import lustre/event
 import modem
+import snag.{type Result}
 
 pub fn main() {
   let app = lustre.application(init, update, root)
@@ -60,19 +61,20 @@ pub type Msg {
 
   UserTypedRegisterUsername(String)
   UserClickedRegister
-  BackendBeganRegistration(Result(glasskey.RegistrationOptions, String))
-  AuthenticatorFinishedRegistration(Result(Json, glasskey.Error))
-  BackendFinishedRegistration(Result(Nil, String))
+  BackendBeganRegistration(Result(glasskey.RegistrationOptions))
+  AuthenticatorFinishedRegistration(Result(Json))
+  BackendFinishedRegistration(Result(Nil))
 
   UserTypedLoginUsername(String)
   UserClickedLogin
   BrowserReportedAutofillSupport(Bool)
-  BackendBeganLogin(Result(glasskey.AuthenticationOptions, String))
-  BackendBeganModalLogin(Result(glasskey.AuthenticationOptions, String))
-  BrowserStartedConditionalAuth(Result(Nil, glasskey.Error))
-  AuthenticatorFinishedLogin(Result(Json, glasskey.Error))
-  AuthenticatorFinishedConditionalLogin(Result(Json, glasskey.Error))
-  BackendFinishedLogin(Result(String, String))
+  BackendBeganLogin(Result(glasskey.AuthenticationOptions))
+  BackendBeganModalLogin(Result(glasskey.AuthenticationOptions))
+  BrowserStartedConditionalAuth(Result(Nil))
+  AuthenticatorFinishedLogin(Result(Json))
+  AuthenticatorFinishedConditionalLogin(Result(Json))
+  ConditionalAuthenticationAborted
+  BackendFinishedLogin(Result(String))
 }
 
 fn init(_flags) -> #(Model, Effect(Msg)) {
@@ -183,8 +185,11 @@ fn update_register(
       registering(username, RegisterAwaitingAuthenticator),
       registration_effect(options),
     )
-    RegisterBeginning, BackendBeganRegistration(Error(message)) -> #(
-      registering(username, RegisterIdle(status: RegisterFailed(message))),
+    RegisterBeginning, BackendBeganRegistration(Error(error)) -> #(
+      registering(
+        username,
+        RegisterIdle(status: RegisterFailed(snag.line_print(error))),
+      ),
       effect.none(),
     )
     RegisterAwaitingAuthenticator,
@@ -198,7 +203,7 @@ fn update_register(
     -> #(
       registering(
         username,
-        RegisterIdle(status: RegisterFailed(glasskey_error_to_string(error))),
+        RegisterIdle(status: RegisterFailed(snag.line_print(error))),
       ),
       effect.none(),
     )
@@ -206,8 +211,11 @@ fn update_register(
       registering(username, RegisterIdle(status: RegisterSucceeded)),
       effect.none(),
     )
-    RegisterVerifying, BackendFinishedRegistration(Error(message)) -> #(
-      registering(username, RegisterIdle(status: RegisterFailed(message))),
+    RegisterVerifying, BackendFinishedRegistration(Error(error)) -> #(
+      registering(
+        username,
+        RegisterIdle(status: RegisterFailed(snag.line_print(error))),
+      ),
       effect.none(),
     )
     _, _ -> #(registering(username, phase), effect.none())
@@ -239,8 +247,8 @@ fn update_login(
       login_model(LoginSettingUpConditional, username),
       start_conditional_authentication_effect(options),
     )
-    LoginSettingUpConditional, BackendBeganLogin(Error(message)) -> #(
-      login_model(LoginFailed(message:), username),
+    LoginSettingUpConditional, BackendBeganLogin(Error(error)) -> #(
+      login_model(LoginFailed(message: snag.line_print(error)), username),
       effect.none(),
     )
     LoginSettingUpConditional, BrowserStartedConditionalAuth(Ok(Nil)) -> #(
@@ -248,10 +256,7 @@ fn update_login(
       effect.none(),
     )
     LoginSettingUpConditional, BrowserStartedConditionalAuth(Error(error)) -> #(
-      login_model(
-        LoginFailed(message: glasskey_error_to_string(error)),
-        username,
-      ),
+      login_model(LoginFailed(message: snag.line_print(error)), username),
       effect.none(),
     )
 
@@ -259,8 +264,8 @@ fn update_login(
       login_model(LoginModalAwaiting, username),
       authentication_effect(options),
     )
-    LoginModalBeginning, BackendBeganModalLogin(Error(message)) -> #(
-      login_model(LoginFailed(message:), username),
+    LoginModalBeginning, BackendBeganModalLogin(Error(error)) -> #(
+      login_model(LoginFailed(message: snag.line_print(error)), username),
       effect.none(),
     )
 
@@ -269,10 +274,7 @@ fn update_login(
       api.login_complete(response, BackendFinishedLogin),
     )
     LoginModalAwaiting, AuthenticatorFinishedLogin(Error(error)) -> #(
-      login_model(
-        LoginFailed(message: glasskey_error_to_string(error)),
-        username,
-      ),
+      login_model(LoginFailed(message: snag.line_print(error)), username),
       effect.none(),
     )
 
@@ -280,14 +282,12 @@ fn update_login(
       login_model(LoginVerifying, username),
       api.login_complete(response, BackendFinishedLogin),
     )
-    LoginConditional,
-      AuthenticatorFinishedConditionalLogin(Error(glasskey.Aborted))
-    -> #(login_model(LoginReady, username), effect.none())
+    LoginConditional, ConditionalAuthenticationAborted -> #(
+      login_model(LoginReady, username),
+      effect.none(),
+    )
     LoginConditional, AuthenticatorFinishedConditionalLogin(Error(error)) -> #(
-      login_model(
-        LoginFailed(message: glasskey_error_to_string(error)),
-        username,
-      ),
+      login_model(LoginFailed(message: snag.line_print(error)), username),
       effect.none(),
     )
 
@@ -295,8 +295,8 @@ fn update_login(
       Authenticated(username: verified_username),
       modem.push(router.to_path(router.Welcome), option.None, option.None),
     )
-    LoginVerifying, BackendFinishedLogin(Error(message)) -> #(
-      login_model(LoginFailed(message:), username),
+    LoginVerifying, BackendFinishedLogin(Error(error)) -> #(
+      login_model(LoginFailed(message: snag.line_print(error)), username),
       effect.none(),
     )
 
@@ -360,12 +360,27 @@ fn start_conditional_authentication_effect(
         set_pending_abort(conditional.abort)
         dispatch(BrowserStartedConditionalAuth(Ok(Nil)))
         conditional.result
-        |> promise.map(fn(r) {
-          dispatch(AuthenticatorFinishedConditionalLogin(r))
+        |> promise.map(fn(result) {
+          case result {
+            Error(glasskey.Aborted) ->
+              dispatch(ConditionalAuthenticationAborted)
+            result ->
+              dispatch(
+                AuthenticatorFinishedConditionalLogin(snag.map_error(
+                  result,
+                  glasskey_error_to_string,
+                )),
+              )
+          }
         })
         Nil
       }
-      Error(error) -> dispatch(BrowserStartedConditionalAuth(Error(error)))
+      Error(error) ->
+        dispatch(
+          BrowserStartedConditionalAuth(
+            snag.error(glasskey_error_to_string(error)),
+          ),
+        )
     }
   })
 }
@@ -377,17 +392,18 @@ fn abort_conditional_effect() -> Effect(Msg) {
 fn authentication_effect(
   options: glasskey.AuthenticationOptions,
 ) -> Effect(Msg) {
-  dispatch_promise(
-    glasskey.start_authentication(options),
-    AuthenticatorFinishedLogin,
-  )
+  dispatch_promise(glasskey.start_authentication(options), fn(result) {
+    AuthenticatorFinishedLogin(snag.map_error(result, glasskey_error_to_string))
+  })
 }
 
 fn registration_effect(options: glasskey.RegistrationOptions) -> Effect(Msg) {
-  dispatch_promise(
-    glasskey.start_registration(options),
-    AuthenticatorFinishedRegistration,
-  )
+  dispatch_promise(glasskey.start_registration(options), fn(result) {
+    AuthenticatorFinishedRegistration(snag.map_error(
+      result,
+      glasskey_error_to_string,
+    ))
+  })
 }
 
 fn root(m: Model) -> Element(Msg) {
@@ -466,7 +482,7 @@ fn is_login_loading(state: LoginState) -> Bool {
 
 fn login_status(state: LoginState) -> String {
   case state {
-    LoginFailed(message:) -> "Error: " <> message
+    LoginFailed(message:) -> message
     _ -> ""
   }
 }
@@ -509,7 +525,7 @@ fn register_status(phase: RegisterPhase) -> String {
   case phase {
     RegisterIdle(status: RegisterStart) -> ""
     RegisterIdle(status: RegisterSucceeded) -> "Registration successful!"
-    RegisterIdle(status: RegisterFailed(message)) -> "Error: " <> message
+    RegisterIdle(status: RegisterFailed(message)) -> message
     _ -> ""
   }
 }

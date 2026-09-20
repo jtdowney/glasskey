@@ -59,3 +59,4 @@ lustre = { version = ">= 5.0.0 and < 6.0.0" }
 lustre_dev_tools = { version = ">= 2.0.0 and < 3.0.0" }
 modem = { version = ">= 2.1.2 and < 3.0.0" }
 rsvp = { version = ">= 2.0.0 and < 3.0.0" }
+snag = { version = ">= 1.0.0 and < 2.0.0" }
