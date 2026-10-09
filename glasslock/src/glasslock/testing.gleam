@@ -153,10 +153,8 @@ pub type AuthenticatorFlags {
 }
 
 /// User present, not user verified.
-pub const default_flags = AuthenticatorFlags(
-  user_present: True,
-  user_verified: False,
-)
+pub const default_flags =
+  AuthenticatorFlags(user_present: True, user_verified: False)
 
 fn encode_flags(
   flags: AuthenticatorFlags,
